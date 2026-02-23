@@ -1,5 +1,5 @@
 """
-1D diffusion example: 5-bin (5-layer) slab problem.
+1D diffusion example: 5 layer slab problem.
 
 Uses:
   - lhs_generation.py   : DiffusionParamSampler to draw LHS parameter sets
@@ -32,7 +32,7 @@ N_CELLS = 100           # total finite-volume cells
 
 layer_bounds = np.linspace(0.0, L, N_BINS + 1)   # [0, 2, 4, 6, 8, 10]
 
-print("=== 5-bin diffusion problem ===")
+print("=== 5-layer diffusion problem ===")
 print(f"Layer bounds : {layer_bounds}")
 
 # ------------------------------------------------------------------ #
@@ -93,7 +93,7 @@ for xb in layer_bounds[1:-1]:
 
 ax.set_xlabel('x  [cm]', fontsize=12)
 ax.set_ylabel('φ(x)  [a.u.]', fontsize=12)
-ax.set_title(f'1D diffusion – 5-bin slab  (N_cells={N_CELLS}, M_LHS={M_SAMPLES})', fontsize=13)
+ax.set_title(f'1D diffusion – 5-layer slab  (N_cells={N_CELLS}, M_LHS={M_SAMPLES})', fontsize=13)
 
 sm = matplotlib.cm.ScalarMappable(cmap=cmap, norm=norm)
 sm.set_array([])
@@ -103,6 +103,6 @@ cbar_ticks = [0, 5, 10, 25, 50, 75, 90, 95, 100]
 cbar.set_ticks(cbar_ticks)
 cbar.set_ticklabels([f'P{p}' for p in cbar_ticks])
 plt.tight_layout()
-plt.savefig('output_graphs/5bin_diffusion.png', dpi=150)
-print("\nSaved: output_graphs/5bin_diffusion.png")
+plt.savefig('output_graphs/5layer_diffusion.png', dpi=150)
+print("\nSaved: output_graphs/5layer_diffusion.png")
 plt.show()
