@@ -81,10 +81,11 @@ phi_pcts = np.percentile(phi_all, PERCENTILES, axis=0)  # shape (9, N_CELLS)
 fig, ax = plt.subplots(figsize=(9, 5))
 
 cmap = plt.get_cmap('plasma')
-colors = [cmap(i / (len(PERCENTILES) - 1)) for i in range(len(PERCENTILES))]
+norm = matplotlib.colors.Normalize(vmin=PERCENTILES[0], vmax=PERCENTILES[-1])
+colors = [cmap(norm(pct)) for pct in PERCENTILES]
 
 for pct, pct_vals, color in zip(PERCENTILES, phi_pcts, colors):
-    ax.plot(x, pct_vals, color=color, lw=1.5, label=f'P{pct}')
+    ax.plot(x, pct_vals, color=color, lw=1.5)
 
 # Layer boundaries
 for xb in layer_bounds[1:-1]:
@@ -93,7 +94,14 @@ for xb in layer_bounds[1:-1]:
 ax.set_xlabel('x  [cm]', fontsize=12)
 ax.set_ylabel('φ(x)  [a.u.]', fontsize=12)
 ax.set_title(f'1D diffusion – 5-bin slab  (N_cells={N_CELLS}, M_LHS={M_SAMPLES})', fontsize=13)
-ax.legend(fontsize=10, ncol=3)
+
+sm = matplotlib.cm.ScalarMappable(cmap=cmap, norm=norm)
+sm.set_array([])
+cbar = fig.colorbar(sm, ax=ax, pad=0.02)
+cbar.set_label('Percentile', fontsize=11)
+cbar_ticks = [0, 5, 10, 25, 50, 75, 90, 95, 100]
+cbar.set_ticks(cbar_ticks)
+cbar.set_ticklabels([f'P{p}' for p in cbar_ticks])
 plt.tight_layout()
 plt.savefig('output_graphs/5bin_diffusion.png', dpi=150)
 print("\nSaved: output_graphs/5bin_diffusion.png")
