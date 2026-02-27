@@ -1,5 +1,5 @@
 """
-5-layer diffusion study: varying source in layer 5 only.
+5-layer diffusion study: varying source in layer 4 only.
 
 Geometry
 --------
@@ -14,7 +14,7 @@ Fixed parameters (layers 1-5)
 
 Varying parameter
 -----------------
-  q_4 ∈ [0, 3]  n/cm^3/s    (layer 5 only, sampled via LHS)
+  q_4 ∈ [0, 3]  n/cm^3/s    (layer 4 only, sampled via LHS)
 
 BCs    : zero-flux Dirichlet on both ends (φ(0) = φ(10) = 0)
 Mesh   : N = 200 cells
@@ -72,6 +72,9 @@ fig, ax = plt.subplots(figsize=(8, 5))
 cmap   = plt.get_cmap('plasma')
 norm   = plt.Normalize(vmin=Q4_RANGE[0], vmax=Q4_RANGE[1])
 
+phi_at_x1 = []
+phi_at_x5 = []
+
 for i, g in enumerate(X):
     D_i, Siga_i, q_i = sampler.unpack(g)
     x_full, phi_full = solve_diffusion(
@@ -80,7 +83,12 @@ for i, g in enumerate(X):
         bc_right=('dirichlet', 0.0),
     )
     x_m, phi_m = mask_solution(x_full, phi_full, PLOT_MIN, PLOT_MAX)
+    phi_at_x1.append(phi_m[0])
+    phi_at_x5.append(phi_m[-1])
     ax.plot(x_m, phi_m, color=cmap(norm(q4_values[i])), lw=1.0, alpha=0.8)
+
+print(f"Max flux difference at x≈{PLOT_MIN}: {max(phi_at_x1) - min(phi_at_x1):.4f}")
+print(f"Max flux difference at x≈{PLOT_MAX}: {max(phi_at_x5) - min(phi_at_x5):.4f}")
 
 # ------------------------------------------------------------------ #
 # Colorbar and labels                                                  #

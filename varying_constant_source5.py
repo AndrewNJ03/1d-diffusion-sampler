@@ -45,9 +45,9 @@ PLOT_MAX = 5.0
 # Parameter setup                                                      #
 # ------------------------------------------------------------------ #
 D_FIXED     = 1.0
-SIGMA_FIXED = 0.5
+SIGMA_FIXED = 1.0
 Q_FIXED     = 1.0
-Q5_RANGE    = [0.0, 3.0]   # only layer 5 varies
+Q5_RANGE    = [0.5, 2.0]   # only layer 5 varies
 
 M_SAMPLES = 40
 SEED      = 0
@@ -72,18 +72,26 @@ fig, ax = plt.subplots(figsize=(8, 5))
 cmap   = plt.get_cmap('plasma')
 norm   = plt.Normalize(vmin=Q5_RANGE[0], vmax=Q5_RANGE[1])
 
+phi_at_x1 = []
+phi_at_x5 = []
+
 for i, g in enumerate(X):
     D_i, Siga_i, q_i = sampler.unpack(g)
     x_full, phi_full = solve_diffusion(
         L, N_CELLS, layer_bounds, D_i, Siga_i, q_i,
-        bc_left=('dirichlet', 0.0),
-        bc_right=('dirichlet', 0.0),
+        bc_left=('dirichlet', 1.0),
+        bc_right=('dirichlet', 1.0),
     )
     x_m, phi_m = mask_solution(x_full, phi_full, PLOT_MIN, PLOT_MAX)
+    phi_at_x1.append(phi_m[0])
+    phi_at_x5.append(phi_m[-1])
     ax.plot(x_m, phi_m, color=cmap(norm(q5_values[i])), lw=1.0, alpha=0.8)
 
+print(f"Max flux difference at x≈{PLOT_MIN}: {max(phi_at_x1) - min(phi_at_x1):.4f}")
+print(f"Max flux difference at x≈{PLOT_MAX}: {max(phi_at_x5) - min(phi_at_x5):.4f}")
+
 # ------------------------------------------------------------------ #
-# Colorbar and labels                                                  #
+# Colorbar and labels                                                #
 # ------------------------------------------------------------------ #
 sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
 sm.set_array([])
@@ -98,6 +106,6 @@ ax.set_title(
     fontsize=12,
 )
 plt.tight_layout()
-plt.savefig("output_graphs/varying_source_layer5.png", dpi=150)
-print("Saved: output_graphs/varying_source_layer5.png")
+plt.savefig("output_graphs/varying_constant_source_layer5.png", dpi=150)
+print("Saved: output_graphs/varying_constant_source_layer5.png")
 plt.show()

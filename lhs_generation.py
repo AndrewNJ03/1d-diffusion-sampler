@@ -19,7 +19,7 @@ import numpy as np
 
 
 # ------------------------------------------------------------------ #
-# Core LHS routine                                                     #
+# Core LHS routine                                                   #
 # ------------------------------------------------------------------ #
 
 def latin_hypercube_sample(
@@ -81,7 +81,7 @@ def latin_hypercube_sample(
 
 
 # ------------------------------------------------------------------ #
-# Convenience class for the diffusion problem                          #
+# Convenience class for the diffusion problem                        #
 # ------------------------------------------------------------------ #
 
 class DiffusionParamSampler:

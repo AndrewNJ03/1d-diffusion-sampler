@@ -5,14 +5,7 @@ Uses:
   - lhs_generation.py   : DiffusionParamSampler to draw LHS parameter sets
   - second_order_solver.py : solve_diffusion() to compute the scalar flux
 
-Problem setup
--------------
-  Domain : x ∈ [0, L],  L = 10 cm
-  Layers : 5 equal-width bins, each of width L/5 = 2 cm
-  BCs    : zero-flux Dirichlet on both ends (φ(0) = φ(L) = 0)
-  Mesh   : N = 100 cells (20 cells per layer)
-
-A batch of M LHS samples is solved and percentile flux profiles are plotted.
+A batch of M LHS samples is solved and 5 example flux profiles are plotted.
 """
 
 import numpy as np
@@ -24,11 +17,11 @@ from lhs_generation import DiffusionParamSampler
 from second_order_solver import solve_diffusion
 
 # ------------------------------------------------------------------ #
-# Problem geometry                                                     #
+# Problem geometry                                                   #
 # ------------------------------------------------------------------ #
 L      = 10.0           # slab length [cm]
 N_BINS = 5              # number of material layers / bins
-N_CELLS = 100           # total finite-volume cells
+N_CELLS = 100           # total finite-volume cells (20 per material)
 
 layer_bounds = np.linspace(0.0, L, N_BINS + 1)   # [0, 2, 4, 6, 8, 10]
 
@@ -36,7 +29,7 @@ print("=== 5-layer diffusion problem ===")
 print(f"Layer bounds : {layer_bounds}")
 
 # ------------------------------------------------------------------ #
-# LHS parameter study                                                  #
+# LHS parameter study                                                #
 # ------------------------------------------------------------------ #
 M_SAMPLES = 1000
 SEED      = 42
@@ -64,28 +57,18 @@ for i, g in enumerate(X):
         x = x_i
     phi_all[i] = phi_i
 
-# Percentile Counter
-# 0 - 9
-lower_percentiles = list(range(0, 10, 1))
-# 10 - 90
-midle_percentiles = list(range(10, 100, 10))
-# 91 - 100
-highr_percentiles = list(range(90, 101, 1))
-
-PERCENTILES = lower_percentiles + midle_percentiles + highr_percentiles
-phi_pcts = np.percentile(phi_all, PERCENTILES, axis=0)  # shape (9, N_CELLS)
-
 # ------------------------------------------------------------------ #
-# Plot                                                                 #
+# Plot                                                               #
 # ------------------------------------------------------------------ #
+N_EXAMPLES = 5
+rng = np.random.default_rng(SEED)
+example_indices = rng.choice(M_SAMPLES, size=N_EXAMPLES, replace=False)
+
 fig, ax = plt.subplots(figsize=(9, 5))
 
-cmap = plt.get_cmap('plasma')
-norm = matplotlib.colors.Normalize(vmin=PERCENTILES[0], vmax=PERCENTILES[-1])
-colors = [cmap(norm(pct)) for pct in PERCENTILES]
-
-for pct, pct_vals, color in zip(PERCENTILES, phi_pcts, colors):
-    ax.plot(x, pct_vals, color=color, lw=1.5)
+colors = plt.get_cmap('tab10').colors
+for i, idx in enumerate(example_indices):
+    ax.plot(x, phi_all[idx], color=colors[i], lw=1.5, label=f'Sample {i+1}')
 
 # Layer boundaries
 for xb in layer_bounds[1:-1]:
@@ -94,14 +77,7 @@ for xb in layer_bounds[1:-1]:
 ax.set_xlabel('x  [cm]', fontsize=12)
 ax.set_ylabel('φ(x)  [a.u.]', fontsize=12)
 ax.set_title(f'1D diffusion – 5-layer slab  (N_cells={N_CELLS}, M_LHS={M_SAMPLES})', fontsize=13)
-
-sm = matplotlib.cm.ScalarMappable(cmap=cmap, norm=norm)
-sm.set_array([])
-cbar = fig.colorbar(sm, ax=ax, pad=0.02)
-cbar.set_label('Percentile', fontsize=11)
-cbar_ticks = [0, 5, 10, 25, 50, 75, 90, 95, 100]
-cbar.set_ticks(cbar_ticks)
-cbar.set_ticklabels([f'P{p}' for p in cbar_ticks])
+ax.legend(fontsize=10)
 plt.tight_layout()
 plt.savefig('output_graphs/5layer_diffusion.png', dpi=150)
 print("\nSaved: output_graphs/5layer_diffusion.png")
