@@ -46,7 +46,7 @@ PLOT_MAX = 5.0
 # ------------------------------------------------------------------ #
 D_FIXED     = 1.0
 SIGMA_FIXED = 0.5
-XS5_RANGE   = [0.0, 1.5]   # only layer 5 varies
+XS5_RANGE   = [0.0, 3.0]   # only layer 5 varies
 Q_FIXED     = 1.0
 
 M_SAMPLES = 40

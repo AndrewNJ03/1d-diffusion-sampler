@@ -45,7 +45,7 @@ PLOT_MAX = 5.0
 # Parameter setup                                                      #
 # ------------------------------------------------------------------ #
 D_FIXED     = 1.0
-D5_RANGE    = [0.2, 2.0]   # only layer 5 varies
+D5_RANGE    = [0.0, 3.0]   # only layer 5 varies
 SIGMA_FIXED = 0.5
 Q_FIXED     = 1.0
 
