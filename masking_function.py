@@ -38,7 +38,13 @@ def mask_solution(
     if x_min >= x_max:
         raise ValueError(f"x_min ({x_min}) must be strictly less than x_max ({x_max}).")
 
-    mask = (x >= x_min) & (x <= x_max)
+    # Face-interval rule (Section 5): include cell i if its interval
+    # [x_i - h/2, x_i + h/2] intersects [x_min, x_max].
+    # Assumes a uniform mesh; h is inferred from consecutive cell centers.
+    h = x[1] - x[0]
+    face_left  = x - 0.5 * h
+    face_right = x + 0.5 * h
+    mask = (face_left < x_max) & (face_right > x_min)
     return x[mask], phi[mask]
 
 

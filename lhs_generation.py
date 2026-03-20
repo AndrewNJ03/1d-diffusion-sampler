@@ -171,6 +171,26 @@ class DiffusionParamSampler:
         X[:, self._fixed_mask] = self._fixed_value[self._fixed_mask]
         return X
 
+    def sample_random(self, n_samples: int, random_state=None) -> np.ndarray:
+        """
+        Draw n_samples points uniformly at random within the parameter bounds.
+
+        Parameters
+        ----------
+        n_samples : int
+        random_state : int or numpy.random.Generator, optional
+
+        Returns
+        -------
+        X : ndarray, shape (n_samples, p)
+        """
+        rng = np.random.default_rng(random_state)
+        lo = self.bounds[:, 0]
+        hi = self.bounds[:, 1]
+        X = rng.uniform(lo, hi, size=(n_samples, self.p))
+        X[:, self._fixed_mask] = self._fixed_value[self._fixed_mask]
+        return X
+
     def unpack(self, mu: np.ndarray):
         """
         Unpack a single parameter vector g (shape (p,)) into the three
