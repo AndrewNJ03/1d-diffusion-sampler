@@ -22,8 +22,9 @@ import time
 # Common utilities live one level up
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'common'))
 from svd_analysis import main as run_svd
-
 from gpr_pod import main as run_gpr
+from adjoint_stage import main as run_adjoint
+from ge_gpr import main as run_ge_gpr
 
 
 def _per_layer_bounds(scalar_bounds, n_layers, fixed_mats, key):
@@ -65,9 +66,24 @@ def main(
     energy_threshold=0.999,
     # Stage 2 — GPR (sklearn)
     n_restarts=5,
+    # Stage 3 — Adjoint sensitivities
+    n_verify=10,
+    n_fd_check=3,
+    n_sweep=60,
+    mode_indices=(0,),
+    expansion_point=1.2,
+    # Stage 4 — GE-GPR
+    m_ge=100,
+    ge_n_restarts=3,
+    ge_noise_f=1e-3,
+    ge_noise_d=1e-3,
+    ge_run_lc=True,
+    ge_lc_sizes=None,
     # Pipeline control
     skip_svd=False,
     skip_gpr=False,
+    skip_adjoint=False,
+    skip_ge_gpr=False,
 ):
     # Build per-layer bounds, fixing any materials listed in fixed_mats
     d_bounds_layers       = _per_layer_bounds(d_bounds,       n_bins, fixed_mats, "D")
@@ -112,6 +128,43 @@ def main(
         print(f"\n  [Stage 2]  DONE  ({time.perf_counter() - t0:.1f}s)")
     else:
         print("\n  Skipping: Stage 2 — GPR on POD coefficients")
+
+    if not skip_adjoint:
+        print(f"\n{'='*60}")
+        print("  Stage 3 — Adjoint sensitivities")
+        print(f"{'='*60}")
+        t0 = time.perf_counter()
+        run_adjoint(
+            **shared,
+            fixed_mats=fixed_mats,
+            n_verify=n_verify,
+            n_fd_check=n_fd_check,
+            n_sweep=n_sweep,
+            mode_indices=mode_indices,
+            expansion_point=expansion_point,
+        )
+        print(f"\n  [Stage 3]  DONE  ({time.perf_counter() - t0:.1f}s)")
+    else:
+        print("\n  Skipping: Stage 3 — Adjoint sensitivities")
+
+    if not skip_ge_gpr:
+        print(f"\n{'='*60}")
+        print("  Stage 4 — GE-GPR (gradient-enhanced surrogate)")
+        print(f"{'='*60}")
+        t0 = time.perf_counter()
+        run_ge_gpr(
+            **shared,
+            fixed_mats=fixed_mats,
+            m_ge=m_ge,
+            n_restarts=ge_n_restarts,
+            noise_f_init=ge_noise_f,
+            noise_d_init=ge_noise_d,
+            run_learning_curve=ge_run_lc,
+            learning_curve_sizes=ge_lc_sizes,
+        )
+        print(f"\n  [Stage 4]  DONE  ({time.perf_counter() - t0:.1f}s)")
+    else:
+        print("\n  Skipping: Stage 4 — GE-GPR")
 
     total = time.perf_counter() - pipeline_start
     print(f"\n{'='*60}")
