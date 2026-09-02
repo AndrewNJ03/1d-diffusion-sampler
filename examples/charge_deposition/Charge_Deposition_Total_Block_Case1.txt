@@ -1,0 +1,6 @@
+# CHARGE DEPOSITION
+# Block, Block Name, Volume, Value
+1, center_conductor_Al, 0.006546835363, -2.943751114e-11
+2, dielectric_Teflon, 0.05881445835, 1.142623105e-07
+3, outer_shield_Al, 0.02880469536, -3.777221797e-07
+4, delamination_void, 1.595232047e-07, 1.097672195e-16

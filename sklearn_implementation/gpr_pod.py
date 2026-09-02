@@ -20,6 +20,7 @@ import matplotlib.pyplot as plt
 
 from sklearn.gaussian_process import GaussianProcessRegressor
 from sklearn.gaussian_process.kernels import RBF, ConstantKernel, WhiteKernel
+from sklearn.preprocessing import StandardScaler
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'common'))
 from second_order_solver import build_mesh  
@@ -72,24 +73,10 @@ def main(
     # ------------------------------------------------------------------ #
     print("\nStep 2: Normalising inputs and standardising outputs")
 
-    # Build (p, 2) bounds array matching lhs_generation.DiffusionParamSampler order:
-    #   [D_1...D_N | Σa_1...Σa_N | q_1...q_N]
-    n = n_bins
-
-    def _expand(b):
-        b = np.asarray(b, dtype=float)
-        if b.shape == (2,):
-            b = np.tile(b, (n, 1))
-        return b
-
-    bounds = np.vstack([_expand(d_bounds), _expand(sigma_a_bounds), _expand(q_bounds)])  # (p, 2)
-
-    X_lo  = bounds[:, 0]
-    X_rng = bounds[:, 1] - bounds[:, 0]
-    X_rng[X_rng == 0] = 1.0             
-
-    X_tr_norm = (X_tr - X_lo) / X_rng   # (M_tr, p)  ∈ [0, 1]
-    X_te_norm = (X_te - X_lo) / X_rng   # (M_te, p)  ∈ [0, 1]
+    # Standardise inputs (zero mean, unit variance), fit on training data only
+    x_scaler  = StandardScaler()
+    X_tr_norm = x_scaler.fit_transform(X_tr)   # (M_tr, p)
+    X_te_norm = x_scaler.transform(X_te)       # (M_te, p)
 
     # Standardise each coefficient dimension independently
     alpha_mu  = alpha_train.mean(axis=0)                            # (R,)

@@ -310,26 +310,14 @@ def main(
                 dgrad_0 = ((dalpha_sw[exp_idx + 1, ki] - dalpha_sw[exp_idx - 1, ki])
                            / (mu_j_vals[exp_idx + 1] - mu_j_vals[exp_idx - 1]))
 
-            # d³α/dµ³ (curvature of gradient) via second-order central difference
-            if 1 <= exp_idx <= n_sweep - 2:
-                h = mu_j_vals[exp_idx + 1] - mu_j_vals[exp_idx]
-                d2grad_0 = ((dalpha_sw[exp_idx + 1, ki]
-                             - 2.0 * dalpha_sw[exp_idx, ki]
-                             + dalpha_sw[exp_idx - 1, ki]) / h**2)
-            else:
-                d2grad_0 = 0.0
-
             dm = mu_j_vals - mu_0
             dalpha_taylor_lin  = grad_0 + dgrad_0 * dm
-            dalpha_taylor_quad = dalpha_taylor_lin + 0.5 * d2grad_0 * dm**2
 
             ax = axes[1, ki]
             ax.plot(mu_j_vals, dalpha_sw[:, ki], 'k-', lw=2,
                     label='Adjoint gradient')
             ax.plot(mu_j_vals, dalpha_taylor_lin, 'b--', lw=1.8,
                     label=fr'Linear Taylor  [$g_0\'\'={dgrad_0:.3g}$]')
-            ax.plot(mu_j_vals, dalpha_taylor_quad, color='darkorange', ls='-.', lw=1.8,
-                    label=fr'Quadratic Taylor  [$g_0\'\'\'={d2grad_0:.3g}$]')
             ax.axvline(mu_0, color='gray', ls=':', lw=1.0)
             ax.scatter([mu_0], [grad_0], s=70, color='red', zorder=5,
                        label=fr'$\mu_0={mu_0:.3g}$')
