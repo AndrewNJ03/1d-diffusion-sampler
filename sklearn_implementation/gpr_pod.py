@@ -56,6 +56,16 @@ def main(
     Y_te_T      = np.loadtxt(f"{output_dir}/qoi_values_test.txt",    comments='#')  # (M_te, Ny)
     Y_te        = Y_te_T.T                                                           # (Ny, M_te)
 
+    # A single-parameter design matrix (p=1) collapses to 1-D under loadtxt.
+    if Psi.ndim == 1:
+        Psi = Psi[:, None]
+    if X_tr.ndim == 1:
+        X_tr = X_tr[:, None]
+    if X_te.ndim == 1:
+        X_te = X_te[:, None]
+    if alpha_train.ndim == 1:
+        alpha_train = alpha_train[:, None]
+
     Ny, R    = Psi.shape
     M_tr, p  = X_tr.shape
     M_te     = X_te.shape[0]
