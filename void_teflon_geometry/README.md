@@ -111,21 +111,67 @@ argument. What §4–§5 add is treating it as a first-class *parameter* of the
 ROM — sampled, learned, and adjoint-differentiated exactly like
 `void_thickness` — rather than a constant baked into the pipeline scripts.
 
-### Building a full material field
+### What `s` is
 
-`void_teflon_field()` builds one property field (D, Σₐ, or q) over the
-mesh as:
+Define, for each cell `i` with radial coordinate `r_i = |x_i - L/2|`,
+
+```
+s_i := sigmoid_switch(r_i; a, b) = 1 / (1 + exp(-a·(r_i - b)))   ∈ (0, 1)
+```
+
+This is a single scalar per cell, purely geometric — it depends only on the
+cell's position `r_i` and the switch's `(a, b)`, and knows nothing about
+`D`, `Σₐ`, or `q`. Read it as **"how far past the interface is cell `i`,
+on a 0-to-1 scale"**:
+
+- `s_i ≈ 0` for cells deep on the Void side (`r_i ≪ b`),
+- `s_i ≈ 1` for cells deep on the Teflon side (`r_i ≫ b`),
+- `s_i = 0.5` exactly at the interface (`r_i = b`),
+- the width of the transition between "≈0" and "≈1" is set by `1/a` — a
+  steeper `a` squeezes the S-shaped rise into a narrower band of `r`.
+
+It's the exact continuous analog of the hard step's 0/1 indicator "which
+side of the boundary is cell `i` on" — except it rises smoothly through
+every value in between instead of jumping.
+
+### From `s` to a material field
+
+`void_teflon_field()` turns that single geometric quantity `s_i` into a
+per-cell value of *any* material property (D, Σₐ, or q) with one line:
+
+```
+shell_val_i = val_void + (val_teflon - val_void) * s_i
+```
+
+This is nothing more than a **weighted average of the two endpoint values,
+weighted by `s_i`** — equivalently `shell_val_i = (1-s_i)·val_void +
+s_i·val_teflon`. It's the unique affine (straight-line) blend that
+reproduces the two limits a hard step would give: `s_i = 0` returns exactly
+`val_void`, `s_i = 1` returns exactly `val_teflon`, and every intermediate
+`s_i` gives a proportional mix. The full field, including the fixed hard
+boundaries at Core and Shield (§1), is then:
 
 ```
 r = |x_centers - L/2|
 r_interface = core_radius + void_thickness
-s(r) = sigmoid_switch(r; steepness, b(void_thickness))
+s(r) = sigmoid_switch(r; steepness, r_interface)
 shell_val(r) = val_void + (val_teflon - val_void) * s(r)
 
 field(x) = val_core                              if r < core_radius
          = shell_val(r)                          if core_radius ≤ r ≤ core_radius + shell_width
          = val_shield                            if r > core_radius + shell_width
 ```
+
+Because `s` doesn't reference `D`, `Σₐ`, or `q` at all, `void_teflon_field()`
+is called **three separate times** with three different `(val_void,
+val_teflon)` pairs — once for `D`, once for `Σₐ`, once for `q` — to build
+the three cell arrays `assign_void_teflon_properties()` returns. The
+geometric part of the computation (`s_i`, and later `ds_i/dp`) is identical
+across all three calls; only the two endpoint values being blended change.
+This is the direct answer to "how do you go from `s` to the field
+parameters": the field parameters (`D_i`, `Σₐ,i`, `q_i`) are just three
+independent linear interpolations between their own two material constants,
+all driven by the same shared geometric weight `s_i`.
 
 Only the **shell interior** uses the sigmoid; the Core/Void and
 Teflon/Shield boundaries are still hard steps, because those don't move in
@@ -255,50 +301,106 @@ adjoint sensitivities `∂α_k/∂D_i` etc. (§5.2b — identical machinery for
 either parameter, since it only cares about the resulting direction
 vector).
 
-**(a) Field derivatives.** Recall from §3:
-`r_interface = core_radius + void_thickness`, `a` = steepness,
-`b` = `r_interface` directly, `s_i = sigmoid_switch(r_i; a, b)`, with
-switch argument `a·(r - b)`.
+**(a) Field derivatives.** This is where `s` from §3 gets differentiated.
+Write the switch's argument as `u := a·(r - b)`, so `s = 1/(1 + exp(-u))`
+(this is just `sigmoid_switch` written with its argument named).
 
-`field_derivative_wrt_void_thickness()` — only `b` depends on
-`void_thickness`, with `db/d(vt) = 1`, so `d(argument)/d(vt) = -a · db/d(vt) = -a`:
-
-```
-d(shell_val)/d(vt) = (val_teflon - val_void) · ds/d(vt)
-ds/d(vt)            = s(1-s) · d(argument)/d(vt) = -a · s(1-s)     (standard sigmoid derivative)
-
-⇒  dfield_i/d(vt) = (val_teflon - val_void) · s_i(1-s_i) · (-a),   for cells in the shell
-                   = 0,                                             for cells in Core or Shield
-```
-
-This is a **one-signed** bump concentrated at the interface (it has the same
-sign everywhere in the shell).
-
-`field_derivative_wrt_steepness()` — here `b` does **not** depend on
-`steepness` at all in this parameterization (`b` is purely geometric), so
-differentiating the switch's argument `a·(r - b)` w.r.t. `a` at fixed `b` is
-immediate — no product rule needed:
+*Step 1 — differentiate the logistic function itself, `ds/du`.* This is
+the one piece of calculus every other derivative here is built from, so it's
+worth deriving explicitly rather than quoting it. From
+`s = (1 + e^{-u})^{-1}`, the chain rule gives
 
 ```
-ds/da = s(1-s) · (r - r_interface)
-
-⇒  dfield_i/d(a) = (val_teflon - val_void) · s_i(1-s_i) · (r_i - r_interface),   for cells in the shell
-                  = 0,                                                            for cells in Core or Shield
+ds/du = -(1 + e^{-u})^{-2} · (-e^{-u}) = e^{-u} / (1 + e^{-u})^2
 ```
 
-This is an **odd-symmetric** bump about the interface: `(r_i - r_interface)`
-flips sign on either side, so — unlike the `void_thickness` derivative —
-increasing `steepness` pushes cell values on the Void side and the Teflon
-side in *opposite* directions relative to the halfway blend, which is
-exactly "sharpening the transition." The measured sweep (§6) shows this
-directly: the sensitivity of `α_1` to `steepness` shrinks monotonically in
-magnitude as `steepness` grows, since the field is already close to its hard
-limit and further sharpening changes less and less of it.
+Split that as a product of two factors, each of which is a familiar quantity:
 
-Both formulas reuse the *same* `s_i` already evaluated when the field itself
-was built, and both are evaluated three times (once per `(val_void,
-val_teflon)` pair) to give `dD_i/dp`, `dΣₐ,i/dp`, `dq_i/dp`
-(`geometry_field_derivatives(param_name, ...)`, dispatching on `param_name`).
+```
+e^{-u} / (1 + e^{-u})^2  =  [ e^{-u} / (1 + e^{-u}) ]  ·  [ 1 / (1 + e^{-u}) ]
+                         =  (1 - s)                    ·  s
+```
+
+using `1/(1+e^{-u}) = s` and `e^{-u}/(1+e^{-u}) = 1 - 1/(1+e^{-u}) = 1 - s`.
+So
+
+```
+ds/du = s(1 - s)
+```
+
+— the standard logistic derivative, and the only place `exp()` shows up in
+any of what follows; every other step below is plain chain rule on top of
+this one fact.
+
+*Step 2 — differentiate `u = a·(r - b)` w.r.t. each parameter.* Cell
+position `r` is fixed (it's a mesh coordinate, not something we
+differentiate with respect to); `a` and `b` are the two things that can
+depend on a parameter `p`:
+
+```
+∂u/∂a = (r - b)          ∂u/∂b = -a
+```
+
+*Step 3 — plug in how `a` and `b` depend on each parameter.* Recall from §3:
+`a = steepness` and `b = r_interface = core_radius + void_thickness` — i.e.
+`a` depends only on `steepness`, `b` depends only on `void_thickness`, and
+neither depends on the other. That makes each parameter's total derivative
+of `u` a single term, not a sum:
+
+- **`p = void_thickness`:** `a` doesn't depend on `vt` (`da/d(vt) = 0`);
+  `b` does, with `db/d(vt) = 1`. So
+  `du/d(vt) = (∂u/∂b)·(db/d(vt)) = -a · 1 = -a`, and by the chain rule
+  through Step 1,
+
+  ```
+  ds/d(vt) = (ds/du) · (du/d(vt)) = s(1-s) · (-a)
+  ```
+
+- **`p = steepness`:** `b` doesn't depend on steepness (`db/d(a) = 0`); `a`
+  *is* steepness, so `da/d(a) = 1`. So
+  `du/d(a) = (∂u/∂a)·(da/d(a)) = (r - b) · 1 = r - r_interface`, and
+
+  ```
+  ds/d(a) = (ds/du) · (du/d(a)) = s(1-s) · (r - r_interface)
+  ```
+
+Two different results from the exact same `ds/du = s(1-s)` fact, because
+`void_thickness` and `steepness` enter `u` through different variables
+(`b` vs. `a`) with different partial derivatives (`-a` vs. `r - b`).
+`void_thickness`'s derivative is **one-signed** (constant sign `-a` times a
+positive bump `s(1-s)`); `steepness`'s is **odd-symmetric** about the
+interface (`r - r_interface` flips sign there), so increasing `steepness`
+pushes Void-side and Teflon-side cells in *opposite* directions relative to
+the halfway blend — exactly "sharpening the transition." The measured sweep
+(§6) shows this directly: `α_1`'s sensitivity to `steepness` shrinks
+monotonically in magnitude as `steepness` grows, since the field is already
+close to its hard limit and further sharpening changes less and less of it.
+
+*Step 4 — from `ds/dp` to `dfield/dp` (back to the field, §3).* Since
+`shell_val = val_void + (val_teflon - val_void)·s` is affine in `s` with
+constants `val_void`, `val_teflon` that don't depend on `p`, differentiating
+it is immediate:
+
+```
+dfield_i/dp = (val_teflon - val_void) · ds_i/dp,        for cells in the shell
+            = 0,                                          for cells in Core or Shield (fixed hard values, §1)
+```
+
+which, substituting the two `ds/dp` results from Step 3, gives exactly:
+
+```
+dfield_i/d(vt) = (val_teflon - val_void) · s_i(1-s_i) · (-a)
+dfield_i/d(a)  = (val_teflon - val_void) · s_i(1-s_i) · (r_i - r_interface)
+```
+
+*Step 5 — from one field to three (`dD`, `dΣₐ`, `dq`).* Exactly as in §3,
+`s_i` and `ds_i/dp` are purely geometric and don't know which physical
+property is being differentiated — only the `(val_void, val_teflon)` prefix
+in Step 4 changes per property. So `field_derivative_wrt_void_thickness()`
+/ `field_derivative_wrt_steepness()` are each called three times inside
+`geometry_field_derivatives(param_name, ...)`, once per `(D_void, D_teflon)`,
+`(Σₐ,void, Σₐ,teflon)`, `(q_void, q_teflon)` pair, producing the three
+direction vectors `dD_i/dp`, `dΣₐ,i/dp`, `dq_i/dp` that feed into §5.2(b).
 
 Note there is no extra "boundary-motion" correction term at `r = core_radius`
 or `r = core_radius + shell_width` for *either* parameter: neither boundary
