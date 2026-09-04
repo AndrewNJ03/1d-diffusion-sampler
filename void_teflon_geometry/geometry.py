@@ -20,20 +20,18 @@ moving it changes which mesh cell it falls in, not a smooth function of its
 own coordinate. This module replaces the hard step, at the Void/Teflon
 interface only, with the logistic activation
 
-    sigma(x; a, b) = 1 / (1 + exp(-(a*x + b)))
+    sigma(x; a, b) = 1 / (1 + exp(-a*(x - b)))
 
-so the interface location becomes a smooth parameter. The Core/Void and
-Teflon/Shield boundaries are left as hard steps, since they do not move in
-this study.
+so the interface location becomes a smooth parameter. `a` is strictly the
+steepness of the transition and `b` is strictly the interface's physical
+location (sigma(b) = 0.5 exactly, for any a) — there is no separate
+conversion step. The Core/Void and Teflon/Shield boundaries are left as
+hard steps, since they do not move in this study.
 
 Public API
 ----------
 sigmoid_switch(x, a, b)
     The activation function itself.
-
-switch_params_from_interface(x0, steepness)
-    Convenience conversion from a physical (interface location, steepness)
-    pair to the (a, b) coefficients used by sigmoid_switch.
 
 void_teflon_field(...)
     Smooth scalar field over a mesh for one material property.
@@ -61,25 +59,13 @@ def sigmoid_switch(x, a, b):
     """
     Logistic activation used as a smooth Void/Teflon switch.
 
-        sigma(x; a, b) = 1 / (1 + exp(-(a*x + b)))
+        sigma(x; a, b) = 1 / (1 + exp(-a*(x - b)))
 
-    sigma -> 0 as (a*x + b) -> -infinity, sigma -> 1 as (a*x + b) -> +infinity.
-    `a` controls the steepness of the transition, `b` shifts its location.
+    sigma -> 0 as a*(x-b) -> -infinity, sigma -> 1 as a*(x-b) -> +infinity;
+    sigma(b) = 0.5 exactly. `a` is strictly the steepness of the
+    transition; `b` is strictly the interface's physical center.
     """
-    return 1.0 / (1.0 + np.exp(-(a * x + b)))
-
-
-def switch_params_from_interface(x0: float, steepness: float):
-    """
-    Convert a physical interface location x0 and a steepness into the
-    (a, b) coefficients of sigmoid_switch, such that sigmoid_switch(x0)=0.5.
-
-        a = steepness
-        b = -steepness * x0
-    """
-    a = steepness
-    b = -steepness * x0
-    return a, b
+    return 1.0 / (1.0 + np.exp(-a * (x - b)))
 
 
 def void_teflon_field(
@@ -128,7 +114,7 @@ def void_teflon_field(
     center = 0.5 * L
     r = np.abs(x_centers - center)               # radial distance from slab center
     r_interface = core_radius + void_thickness    # moving Void/Teflon boundary
-    a, b = switch_params_from_interface(r_interface, steepness)
+    a, b = steepness, r_interface
 
     # Smooth Void -> Teflon blend, valid within the shell [core_radius, core_radius+shell_width]
     s = sigmoid_switch(r, a, b)

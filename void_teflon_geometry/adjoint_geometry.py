@@ -20,20 +20,22 @@ New here (chain rule through the smooth switch):
   geometry.void_teflon_field() w.r.t. each parameter gives, for cells in
   the Void/Teflon shell (elsewhere the field is a fixed hard value, so the
   derivative is 0), with s_i = sigmoid_switch(r_i; a, b), a = steepness,
-  b = -a*(core_radius + void_thickness), r_interface = core_radius + void_thickness:
+  b = r_interface = core_radius + void_thickness (the interface center,
+  passed directly as sigmoid_switch's own `b` argument):
 
   d(field_i)/d(void_thickness) = (val_teflon - val_void) * s_i (1 - s_i) * (-a)
 
-      Only b depends on void_thickness (db/d(vt) = -a); this is a one-signed
-      bump concentrated at the interface.
+      Only b depends on void_thickness (db/d(vt) = 1, and d(argument)/db =
+      -a); this is a one-signed bump concentrated at the interface.
 
   d(field_i)/d(steepness)      = (val_teflon - val_void) * s_i (1 - s_i) * (r_i - r_interface)
 
-      Both a and b depend on steepness, but b = -a*r_interface makes the
-      sigmoid's argument collapse to a*(r - r_interface), so d(argument)/da
-      = (r - r_interface): an *odd* function about the interface (increasing
-      steepness pulls values on each side further from the halfway point,
-      in opposite directions) rather than the one-signed void_thickness bump.
+      b does not depend on steepness (a) at all in this parameterization, so
+      the switch's argument a*(r-b) differentiates w.r.t. a directly:
+      d(argument)/da = (r - b) = (r - r_interface): an *odd* function about
+      the interface (increasing steepness pulls values on each side further
+      from the halfway point, in opposite directions) rather than the
+      one-signed void_thickness bump.
 
   Given either per-cell direction vector, the scalar sensitivity of a
   reduced coefficient is
@@ -64,8 +66,7 @@ from adjoint_solver import (                                     # noqa: E402
     build_adjoint_rhs, solve_adjoint, alpha_via_adjoint, _interior_mask,
 )
 from geometry import (                                           # noqa: E402
-    sigmoid_switch, switch_params_from_interface,
-    assign_void_teflon_properties, solve_void_teflon,
+    sigmoid_switch, assign_void_teflon_properties, solve_void_teflon,
 )
 from params import GeometryParamSampler                           # noqa: E402
 
@@ -86,9 +87,8 @@ def field_derivative_wrt_void_thickness(
     center = 0.5 * L
     r = np.abs(x_centers - center)
     r_interface = core_radius + void_thickness
-    a, b = switch_params_from_interface(r_interface, steepness)
 
-    s = sigmoid_switch(r, a, b)
+    s = sigmoid_switch(r, steepness, r_interface)
     dfield = (val_teflon - val_void) * s * (1.0 - s) * (-steepness)
 
     in_shell = (r >= core_radius) & (r <= core_radius + shell_width)
@@ -100,16 +100,17 @@ def field_derivative_wrt_steepness(
     val_void, val_teflon, steepness,
 ):
     """
-    d(field)/d(steepness), per cell. Because b = -a*r_interface, the switch
-    argument is a*(r - r_interface), so d(argument)/da = (r - r_interface):
-    an odd-symmetric bump about the interface (see module docstring).
+    d(field)/d(steepness), per cell. Because b (the interface center) does
+    not depend on steepness (a) in this parameterization, the switch
+    argument a*(r - b) differentiates directly: d(argument)/da = (r - b) =
+    (r - r_interface), an odd-symmetric bump about the interface (see
+    module docstring).
     """
     center = 0.5 * L
     r = np.abs(x_centers - center)
     r_interface = core_radius + void_thickness
-    a, b = switch_params_from_interface(r_interface, steepness)
 
-    s = sigmoid_switch(r, a, b)
+    s = sigmoid_switch(r, steepness, r_interface)
     dfield = (val_teflon - val_void) * s * (1.0 - s) * (r - r_interface)
 
     in_shell = (r >= core_radius) & (r <= core_radius + shell_width)

@@ -27,7 +27,7 @@ import matplotlib.pyplot as plt
 
 sys.path.insert(0, os.path.dirname(__file__))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'common'))
-from second_order_solver import build_mesh          # noqa: E402
+from second_order_solver import build_mesh           # noqa: E402
 from geometry import solve_void_teflon               # noqa: E402
 from params import GeometryParamSampler              # noqa: E402
 

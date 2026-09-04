@@ -89,23 +89,17 @@ boundary happens to land in, not on the true continuum sensitivity).
 interface** with the logistic activation
 
 ```
-sigmoid_switch(x; a, b) = 1 / (1 + exp(-(a·x + b)))
+sigmoid_switch(x; a, b) = 1 / (1 + exp(-a·(x - b)))
 ```
 
-`sigmoid_switch` → 0 as `a·x + b → −∞`, → 1 as `a·x + b → +∞`; `a` sets the
-steepness of the transition and `b` shifts its location. Given a physical
-interface location `x0` and a desired steepness, the coefficients are
+`sigmoid_switch` → 0 as `a·(x-b) → −∞`, → 1 as `a·(x-b) → +∞`; `sigmoid_switch(b) = 0.5`
+exactly, for any `a`. `a` is strictly the steepness of the transition and
+`b` is strictly the interface's physical location — no conversion step is
+needed, `a` and `b` are passed to `sigmoid_switch()` directly. For the
+Void/Teflon interface, `b = r_interface = core_radius + void_thickness`, so
 
 ```
-a = steepness
-b = -steepness · x0            (chosen so sigmoid_switch(x0) = 0.5)
-```
-
-(`switch_params_from_interface()`). For the Void/Teflon interface, the
-location is `x0 = r_interface = core_radius + void_thickness`, so
-
-```
-b(void_thickness) = -steepness · (core_radius + void_thickness)
+b(void_thickness) = core_radius + void_thickness
 ```
 
 — `b` is a *smooth, linear* function of `void_thickness`, and this is the
@@ -263,14 +257,15 @@ vector).
 
 **(a) Field derivatives.** Recall from §3:
 `r_interface = core_radius + void_thickness`, `a` = steepness,
-`b = -a · r_interface`, `s_i = sigmoid_switch(r_i; a, b)`.
+`b` = `r_interface` directly, `s_i = sigmoid_switch(r_i; a, b)`, with
+switch argument `a·(r - b)`.
 
 `field_derivative_wrt_void_thickness()` — only `b` depends on
-`void_thickness`, and `db/d(vt) = -a`:
+`void_thickness`, with `db/d(vt) = 1`, so `d(argument)/d(vt) = -a · db/d(vt) = -a`:
 
 ```
 d(shell_val)/d(vt) = (val_teflon - val_void) · ds/d(vt)
-ds/d(vt)            = s(1-s) · db/d(vt) = -a · s(1-s)     (standard sigmoid derivative)
+ds/d(vt)            = s(1-s) · d(argument)/d(vt) = -a · s(1-s)     (standard sigmoid derivative)
 
 ⇒  dfield_i/d(vt) = (val_teflon - val_void) · s_i(1-s_i) · (-a),   for cells in the shell
                    = 0,                                             for cells in Core or Shield
@@ -279,18 +274,10 @@ ds/d(vt)            = s(1-s) · db/d(vt) = -a · s(1-s)     (standard sigmoid de
 This is a **one-signed** bump concentrated at the interface (it has the same
 sign everywhere in the shell).
 
-`field_derivative_wrt_steepness()` — here *both* `a` and `b` depend on
-`steepness`, but because `b = -a·r_interface` with `r_interface` held fixed
-(differentiating w.r.t. `a` at constant `void_thickness`), the switch's
-*argument* collapses to
-
-```
-a·r + b = a·r - a·r_interface = a·(r - r_interface)
-```
-
-so `d(argument)/da = (r - r_interface)` directly — no product rule needed
-across `a` and `b` separately, since their `a`-dependence combines into one
-clean term:
+`field_derivative_wrt_steepness()` — here `b` does **not** depend on
+`steepness` at all in this parameterization (`b` is purely geometric), so
+differentiating the switch's argument `a·(r - b)` w.r.t. `a` at fixed `b` is
+immediate — no product rule needed:
 
 ```
 ds/da = s(1-s) · (r - r_interface)
