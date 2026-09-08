@@ -1,0 +1,9 @@
+
+\begin{thenomenclature} 
+\nomgroup{A}
+  \item [{\(\alpha\)}]\begingroup POD projection coefficients\nomeqref {0}\nompageref{3}
+  \item [{\(\lambda_k\)}]\begingroup Adjoint solution for POD mode \(k\)\nomeqref {0}\nompageref{3}
+  \item [{\(\phi\)}]\begingroup Scalar flux (cell-centered)\nomeqref {0}\nompageref{3}
+  \item [{\(\Psi\)}]\begingroup QoI-side POD basis\nomeqref {0}\nompageref{3}
+
+\end{thenomenclature}

@@ -289,11 +289,26 @@ in the shell*, via the smooth field.
 ### 5.2 Chain rule through the sigmoid
 
 `A` and `s` are assembled from the per-cell fields `D_i`, `Σₐ,i`, `q_i`, so
-for either parameter `p`, by the chain rule:
+for either parameter `p`, by the (multivariable) chain rule:
 
 ```
-∂α_k/∂p = Σ_i [ ∂α_k/∂D_i · dD_i/dp + ∂α_k/∂Σₐ,i · dΣₐ,i/dp + ∂α_k/∂q_i · dq_i/dp ]
+∂α_k/∂p = Σ_i ∂α_k/∂D_i · dD_i/dp   +   Σ_i ∂α_k/∂Σₐ,i · dΣₐ,i/dp   +   Σ_i ∂α_k/∂q_i · dq_i/dp
+        = ( D-channel term )        +   ( Σₐ-channel term )        +   ( q-channel term )
 ```
+
+**These three channel terms are simply added** to get the total — this is
+not a special trick, just the ordinary multivariable chain rule applied to
+`α_k(D(·;p), Σₐ(·;p), q(·;p))`: since all three fields depend on the same
+`p`, perturbing `p` perturbs all three simultaneously, and the first-order
+change in `α_k` is the sum of the changes attributable to each field held
+independently. It's the same rule as `df/dt = (∂f/∂x)(dx/dt) +
+(∂f/∂y)(dy/dt)` for `f(x(t), y(t))`, with `D`, `Σₐ`, `q` playing the role of
+`x, y` (as `N`-vectors rather than scalars, so each `∂α_k/∂(field)` is a
+gradient and each channel term is a dot product over cells —
+`sensitivity_D_directional(...)`, and the two dot products in
+`sensitivity_from_directions()`). In code, this sum is literally
+`total = dD_term + dSa_term + dq_term` in `sensitivity_from_directions()` —
+nothing more is done to "compress" them.
 
 So two things are needed: (a) the per-cell field derivatives `dD_i/dp` etc.
 (different for each parameter — derived below), and (b) the per-cell

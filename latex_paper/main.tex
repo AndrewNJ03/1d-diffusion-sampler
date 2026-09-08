@@ -1,0 +1,172 @@
+\documentclass[]{ANStopical}
+
+%%% Packages Required by Class (already included)
+% fancyhdr
+% lastpage
+% titling
+% titlesec
+% ragged2e
+% enumitem
+% amsmath
+% graphicx
+% geometry
+% newtxtext
+% newtxmath
+% hyperref
+% cleveref
+% caption
+% authblk
+% apptools
+% appendix
+% ifpdf
+% epstopdf
+
+%%% Some other useful packages
+\usepackage{bm}
+% \usepackage{tikz}
+% \usepackage{color}
+% \usepackage{subcaption}
+% \usepackage{algcompatible}
+% \usepackage{array}
+
+\usepackage{nomencl} % If needed
+
+\title{Gradient-Enhanced Gaussian Process Regression for Non-Intrusive
+POD-Based Reduced-Order Models: An Adjoint-Informed 1D Diffusion Study}
+
+%%% Authors (use arabic numbers: 1, 2, 3, etc. for affiliationNumber)
+\addAuthor[andrewnj03@tamu.edu]{Andrew N. Jeffery}{1}
+\addAuthor[]{Jean C. Ragusa}{1}
+\addAuthor[]{Jim E. Morel}{1}
+
+%%% Affiliations (from authblk)
+\addAffiliation{1}{Department of Nuclear Engineering, Texas A\&M University, College Station, TX}
+
+%%% Write text for abstract
+\Abstract{%
+\textit{Abstract:}
+\begin{itemize}
+    \item Expensive coupled-physics solves $\to$ cheap surrogate. This is the 1D sandbox version of that problem.
+    \item Pipeline: FD diffusion solve $\to$ masked QoI $\to$ POD basis $\to$ GP surrogate for the POD coefficients.
+    \item New idea: an adjoint solve gives free gradients of each POD coefficient. Train a gradient-enhanced GP (GE-GPR) on those instead of a value-only GP.
+    \item Test cases: layered material properties, a smooth void/Teflon interface, maybe both combined.
+    \item Punchline: GE-GPR hits the same accuracy with [???]$\times$ fewer training solves.
+    \item Takeaway: adjoint gradients are a cheap way to make ROM surrogates more sample-efficient.
+\end{itemize}
+}
+
+%%% List up to 5 keywords separated by a comma
+\keywords{reduced-order modeling, proper orthogonal decomposition, Gaussian process regression, adjoint sensitivity, gradient-enhanced surrogate}
+
+%%% Provide a short title for the header on odd pages
+\shortTitle{Gradient-Enhanced GPR for POD-ROM --- M\&C 2027}
+
+%%% Provide a short author listing for the header on even pages
+\authorHead{A. N. Jeffery, J. C. Ragusa, J. E. Morel}
+
+\begin{document}
+
+\section{Introduction}\label{sec:intro}
+
+\begin{itemize}
+    \item Expensive coupled-physics solves are too slow to call over and over (design loops, UQ). Non-intrusive ROMs fix that with a cheap parameter $\to$ QoI surrogate.
+    \item Usual recipe: POD on a QoI snapshot matrix, project to a few coefficients $\alpha(\mu)$, fit a GP to $\mu \mapsto \alpha(\mu)$.
+    \item Problem: a plain GP only learns from function values. Every expensive solve gives one data point per mode.
+    \item Adjoints fix that almost for free: one adjoint solve per POD mode gives the exact gradient w.r.t.\ every parameter at once.
+    \item So: feed those gradients into the GP too $\to$ gradient-enhanced GPR (GE-GPR / GEK). Cite \cite{bouhlel_gek,han_gek,ulaganathan_gek,backhaus_gek,semler_weiser_gek}.
+    \item What this paper does:
+    \begin{itemize}
+        \item derives the adjoint sensitivities of the POD coefficients for the diffusion solver (material layers, plus a smooth moving-interface geometry)
+        \item builds GE-GPR from scratch (scikit-learn has no gradient-observation support) and checks it against standard GPR
+        \item runs the test problems and how gradients impact the learning
+        \item lays out a verification (identity check, FD gradient check, sweep plots) that's reusable elsewhere.
+    \end{itemize}
+\end{itemize}
+
+
+\section{Sandbox Forward Model and Baseline ROM}\label{sec:fwd}
+
+Background: The standard, gradient-free pipeline both test cases build on.
+
+\begin{itemize}
+    \item 1D one-group diffusion, piecewise-constant material layers, Dirichlet BCs. Cell-centered 2nd-order FD $\to$ sparse system $A(\mu)\phi(\mu)=s(\mu)$
+    \item Parameters $\mu$: per-layer $D$, $\Sigma_a$, $q$
+    \item QoI = a masked window of the flux, $y(\mu)=H\phi(\mu)$. Snapshot matrix $\to$ thin SVD $\to$ rank-$r$ POD basis $\Psi$ by an energy cutoff
+    \item Coefficients by projection: $\alpha(\mu) = \Psi^\top y(\mu)$
+    \item Baseline surrogate: one GP per mode, ARD-RBF kernel (scikit-learn)
+    \item Error metrics used everywhere after this: field error $\varepsilon_y$, compared against the POD floor $\varepsilon_{\mathrm{proj}}$
+\end{itemize}
+
+
+\section{Adjoint Sensitivities of the POD Coefficients}\label{sec:adjoint}
+
+The gradients that feed Section~\ref{sec:gegpr}.
+
+\begin{itemize}
+    \item Standard trick: a scalar QoI $J=g^\top\phi$ comes from one adjoint solve $A^\top\lambda=g$, via $J=\lambda^\top s$
+    \item Each POD coefficient $\alpha_k$ is exactly this kind of scalar QoI ($g_k=H^\top\psi_k$) $\to$  adjoint solve per mode gives $\partial\alpha_k/\partial\mu_j$ for every $\mu_j$ at once
+    \item Material-layer case: clean closed forms for $\partial\alpha_k/\partial q_m$ and $\partial\alpha_k/\partial\Sigma_{a,m}$; $\partial\alpha_k/\partial D_m$ requires more work
+    \item Geometry case: a hard material boundary isn't differentiable at the boundary. Fix: swap it for a smooth sigmoid switch at the one moving interface (void/Teflon), derive the chain rule through it (two knobs: interface location, transition sharpness)
+    \item Same adjoint machinery works for both cases; geometry just swaps a 0/1 layer indicator for a smooth per-cell direction vector
+    \item Verification, same three checks each time: identity check ($\lambda^\top s$ vs.\ direct projection, matches to solver tolerance), finite-difference gradient check, and a 1D sweep with a tangent-line overlay
+\end{itemize}
+
+
+\section{Gradient-Enhanced Gaussian Process Regression}\label{sec:gegpr}
+
+The main method contribution.
+
+\begin{itemize}
+    \item Idea: train one GP per mode on both function values and adjoint gradients, not just values. A derivative of a GP is still a GP, so this is one joint covariance model.
+    \item Needs an augmented kernel: value-value, value-gradient, gradient-gradient covariances (closed form for ARD-RBF). Bigger matrix ($M(1+p_{\mathrm{act}})$ instead of $M$), fit by maximizing the augmented marginal likelihood.
+    \item Built from scratch, since scikit-learn's GP can't take derivative observations.
+    \item Everything else about the surrogate matches the baseline (one GP per mode, same kernel family). Isolates the effect of adding gradients.
+    \item Same code reused unmodified on the geometry case, just with a different sampler/adjoint front end feeding it. Might point to this demonstrating that the method doesn't care what $\mu$ physically means.
+\end{itemize}
+
+
+\section{Results}\label{sec:results}
+
+\begin{itemize}
+    \item \textbf{Material-layer case:} SVD spectrum/rank choice, projection-error floor vs.\ $r$, then a learning curve comparing GE-GPR vs.\ standard GPR at matched training-set sizes. Report as "GE-GPR at $M{=}\cdot$ matches standard GPR at $M{=}\cdot$" [???].
+    \item \textbf{Geometry case:} Run once with only the interface location active (close to a 1D problem with nearly all the SVD energy in mode 1), and once with both parameters active. Compare GE-GPR's benefit in each. 
+    \item \textbf{Combined case [???]:} Material layers + geometry together, if there's room/time. Same comparison, higher active-parameter count.
+    \item \textbf{Cost accounting:} An adjoint solve reuses the same factorized matrix as the forward solve, so it's cheap per sample; the trade-off is a bigger, pricier-to-fit kernel matrix.
+\end{itemize}
+
+
+\section{Discussion}\label{sec:discussion}
+
+\begin{itemize}
+    \item Gradient enhancement helps most when: parameter count is small, the forward solve is the expensive part.
+    \item Helps least when: the coefficient map is already easy to learn from values alone (the simple geometry case)
+    \item Known limitation: the augmented kernel grows with $M(1+p_{\mathrm{act}})$. Doesn't scale to large $p$ as-is.
+\end{itemize}
+
+
+\section{Conclusions and Future Work}\label{sec:conclusions}
+
+\begin{itemize}
+    \item Restate the contributions from Sec.~\ref{sec:intro}, past tense, with real numbers filled in
+    \item Future work: Pushing past $p_{\mathrm{act}}\in\{1,2\}$, maybe using the adjoint gradients themselves as a sensitivity/dimension-reduction screen; running the same recipe on the real coupled-physics stack; a multi-output version instead of one GP per mode.
+\end{itemize}
+
+\section*{ACKNOWLEDGEMENTS}
+I have no idea, thank you Dr. Ragusa and Dr. Morel?
+
+% Bibliography instructions for this template:
+%  All bibliography references should be included in the "main.bib" file.
+%  The bibliography should be generated using the "bibtex" command.
+
+\bibliographystyle{ANStopical}
+\bibliography{main}
+
+\appendix
+
+\section{Augmented Kernel Derivative Identities}
+Full algebra behind the closed-form $K_{fd}$, $K_{dd}$ terms in Sec.~\ref{sec:gegpr}, for anyone re-implementing \texttt{GEGaussianProcess} from scratch.
+
+\section{Verification Figures}
+Overflow plot dump if space runs out in the main body: identity checks, FD gradient checks, for both test cases.
+
+\end{document}

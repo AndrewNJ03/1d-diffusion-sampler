@@ -1,0 +1,40 @@
+\begin{thebibliography}{1}
+\newcommand{\enquote}[1]{``#1''}
+\providecommand{\url}[1]{\texttt{#1}}
+\providecommand{\urlprefix}{URL }
+
+\bibitem{bouhlel_gek}
+M.~A. Bouhlel, N.~Bartoli, R.~G. Regis, A.~Otsmane, and J.~Morlier.
+\newblock \enquote{Gradient-enhanced kriging for high-dimensional problems.}
+\newblock \emph{Engineering with Computers} (2019).
+\newblock \urlprefix\url{https://arxiv.org/pdf/1708.02663}.
+
+\bibitem{han_gek}
+Z.-H. Han, S.~G{\"o}rtz, and R.~Zimmermann.
+\newblock \enquote{Improving Variable-Fidelity Surrogate Modeling via
+  Gradient-Enhanced Kriging and a Generalized Hybrid Bridge Function.}
+\newblock \emph{Aerospace Science and Technology} (2013).
+\newblock \urlprefix\url{https://arc.aiaa.org/doi/10.2514/1.J055842}.
+
+\bibitem{ulaganathan_gek}
+S.~Ulaganathan, I.~Couckuyt, T.~Dhaene, J.~Degroote, and E.~Laermans.
+\newblock \enquote{Performance study of gradient-enhanced Kriging.}
+\newblock \emph{Engineering with Computers} (2016).
+\newblock
+  \urlprefix\url{https://link.springer.com/article/10.1007/s00366-015-0397-y}.
+
+\bibitem{backhaus_gek}
+J.~Backhaus, M.~Aulich, C.~Voss, and E.~Nicke.
+\newblock \enquote{Gradient Enhanced Surrogate Models Based on Adjoint {CFD}
+  Methods for the Design of a Counter Rotating Turbofan.}
+\newblock In \emph{Proceedings of ASME Turbo Expo 2012} (2012).
+\newblock
+  \urlprefix\url{https://asmedigitalcollection.asme.org/GT/proceedings/GT2012/44748/2319/365305}.
+
+\bibitem{semler_weiser_gek}
+P.~Semler and M.~Weiser.
+\newblock \enquote{Adaptive Gradient Enhanced Gaussian Process Surrogates for
+  Inverse Problems.} (2024).
+\newblock \urlprefix\url{https://arxiv.org/abs/2404.01864}.
+
+\end{thebibliography}
