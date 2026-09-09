@@ -17,12 +17,16 @@ provides them, and only relabels void_thickness -> b for presentation
 (d(alpha_k)/d(void_thickness) == d(alpha_k)/db and d(alpha_k)/d(steepness)
 == d(alpha_k)/da, unchanged by the shift).
 
-Requires stage-1 artifacts (pod_basis.txt, samples_train.txt,
-coefficients_train.txt, samples_test.txt, qoi_values_test.txt) already
-written by svd_analysis_geometry.main() into output_dir, with BOTH
-void_thickness and steepness active (real, non-degenerate bounds for each)
--- e.g. steepness_bounds=(100.0, 400.0) -- otherwise there is only one
-parameter to compare surrogates over.
+Runs the full pipeline end to end: Stage 1 (svd_analysis_geometry.main())
+builds the POD basis at the requested `energy_threshold` and writes its
+artifacts (pod_basis.txt, samples_train.txt, coefficients_train.txt,
+samples_test.txt, qoi_values_test.txt) into output_dir, then Stage 2 (this
+module) loads them and fits GE-GPR/std-GPR on top. Set run_svd_stage=False
+to skip Stage 1 and reuse artifacts already sitting in output_dir (e.g. when
+iterating on GE-GPR fitting only). Either way, BOTH void_thickness and
+steepness must be active (real, non-degenerate bounds for each) -- e.g.
+steepness_bounds=(100.0, 400.0) -- otherwise there is only one parameter to
+compare surrogates over.
 
 Reuses the generic GEGaussianProcess class, sklearn kernel factory, and
 plotting helpers from sklearn_implementation/ge_gpr.py unchanged: that
@@ -51,6 +55,7 @@ from adjoint_solver import build_adjoint_rhs, solve_adjoint            # noqa: E
 from params import GeometryParamSampler                                # noqa: E402
 from adjoint_geometry import _forward_system, sensitivity_wrt_param    # noqa: E402
 from geometry import material_boundaries                               # noqa: E402
+import svd_analysis_geometry                                           # noqa: E402
 from ge_gpr import (                                                   # noqa: E402
     GEGaussianProcess, _make_sklearn_kernel, _default_lc_sizes,
     _load_pod_artifacts, _gradients_to_standardized,
@@ -127,6 +132,13 @@ def main(
     output_dir: str = "output_graphs_geometry_2param",
     bc_left=('dirichlet', 0.0),
     bc_right=('dirichlet', 0.0),
+    # Stage 1: SVD/POD (svd_analysis_geometry.main()) -- set run_svd_stage=
+    # False to skip and reuse artifacts already in output_dir instead.
+    run_svd_stage: bool = True,
+    energy_threshold: float = 0.99999,
+    m_train: int = 300,
+    m_test: int = 60,
+    seed: int = 1,
     # GE-GPR training budget
     m_ge: int = 100,
     # Hyperparameter optimisation
@@ -151,6 +163,21 @@ def main(
     print("=" * 60)
     print("GE-GPR vs Std-GPR — void_teflon geometry  (a=steepness, b=interface center)")
     print("=" * 60)
+
+    # ------------------------------------------------------------------ #
+    # 0. Stage 1: SVD/POD basis at the requested energy_threshold        #
+    # ------------------------------------------------------------------ #
+    if run_svd_stage:
+        print(f"\nStep 0: Running SVD/POD stage (energy_threshold={energy_threshold})")
+        svd_analysis_geometry.main(
+            L=L, core_radius=core_radius, shield_thickness=shield_thickness,
+            shell_width=shell_width,
+            mat_core=mat_core, mat_void=mat_void, mat_teflon=mat_teflon, mat_shield=mat_shield,
+            n_cells=n_cells, void_bounds=void_bounds, steepness_bounds=steepness_bounds,
+            m_train=m_train, m_test=m_test, seed=seed,
+            qoi_xmin=qoi_xmin, qoi_xmax=qoi_xmax, output_dir=output_dir,
+            energy_threshold=energy_threshold, bc_left=bc_left, bc_right=bc_right,
+        )
 
     # ------------------------------------------------------------------ #
     # 1. Load SVD/POD artifacts                                          #
