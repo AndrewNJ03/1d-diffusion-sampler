@@ -117,7 +117,7 @@ def main(
     mat_void=(1.8, 0.01, 0.0),
     mat_teflon=(0.6, 0.4, 0.0),
     mat_shield=(0.3, 0.9, 0.0),
-    n_cells: int = 4000,
+    n_cells: int = 3500,
     void_bounds=(0.001, 0.25),
     steepness_bounds=(100.0, 400.0),
     qoi_xmin: float = None,
