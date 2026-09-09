@@ -342,6 +342,45 @@ def _compute_training_gradients(
 # Standard-GPR helper (sklearn, on a specified subset)                         #
 # ──────────────────────────────────────────────────────────────────────────── #
 
+def _load_pod_artifacts(output_dir: str):
+    """
+    Load the Stage-1 SVD/POD artifacts (pod_basis.txt, coefficients_train.txt,
+    samples_train.txt, samples_test.txt, qoi_values_test.txt) shared by every
+    GE-GPR pipeline variant, normalising the single-mode/single-parameter
+    edge cases (R=1 or p=1) to 2-D arrays.
+
+    Returns
+    -------
+    Psi, alpha_train, X_tr, X_te, Y_te
+    """
+    Psi         = np.loadtxt(f"{output_dir}/pod_basis.txt",          comments='#')
+    alpha_train = np.loadtxt(f"{output_dir}/coefficients_train.txt", comments='#')
+    X_tr        = np.loadtxt(f"{output_dir}/samples_train.txt",      comments='#')
+    X_te        = np.loadtxt(f"{output_dir}/samples_test.txt",       comments='#')
+    Y_te_T      = np.loadtxt(f"{output_dir}/qoi_values_test.txt",    comments='#')
+    Y_te        = Y_te_T.T
+
+    if Psi.ndim == 1:
+        Psi = Psi[:, None]
+    if alpha_train.ndim == 1:
+        alpha_train = alpha_train[:, None]
+
+    return Psi, alpha_train, X_tr, X_te, Y_te
+
+
+def _gradients_to_standardized(G_full: np.ndarray, X_rng: np.ndarray, alpha_sig: np.ndarray) -> np.ndarray:
+    """
+    Chain-rule adjoint gradients ∂α_k/∂µ_j into the standardised/normalised
+    training space shared by GE-GPR:
+
+        z_k = (α_k − μ_k) / σ_k,   x_j = (µ_j − lo_j) / rng_j
+        ∂z_k/∂x_j = (∂α_k/∂µ_j) · rng_j / σ_k
+
+    G_full : (M, R, p)  ->  returns (M, R, p) in (z, x) space.
+    """
+    return G_full * X_rng[None, None, :] / alpha_sig[None, :, None]
+
+
 def _make_sklearn_kernel(p_active: int):
     return (
         ConstantKernel(constant_value=1.0, constant_value_bounds=(1e-3, 1e3))
@@ -452,17 +491,7 @@ def main(
     # 1. Load SVD/POD artifacts                                          #
     # ------------------------------------------------------------------ #
     print("\nStep 1: Loading SVD/POD artifacts")
-    Psi         = np.loadtxt(f"{output_dir}/pod_basis.txt",          comments='#')
-    alpha_train = np.loadtxt(f"{output_dir}/coefficients_train.txt", comments='#')
-    X_tr        = np.loadtxt(f"{output_dir}/samples_train.txt",      comments='#')
-    X_te        = np.loadtxt(f"{output_dir}/samples_test.txt",       comments='#')
-    Y_te_T      = np.loadtxt(f"{output_dir}/qoi_values_test.txt",    comments='#')
-    Y_te        = Y_te_T.T          # (Ny, M_te)
-
-    if Psi.ndim == 1:
-        Psi = Psi[:, None]
-    if alpha_train.ndim == 1:
-        alpha_train = alpha_train[:, None]
+    Psi, alpha_train, X_tr, X_te, Y_te = _load_pod_artifacts(output_dir)
 
     Ny, R   = Psi.shape
     M_tr, p = X_tr.shape
@@ -529,12 +558,8 @@ def main(
 
     # ------------------------------------------------------------------ #
     # 4. Chain-rule: convert gradients to standardised/normalised spaces #
-    #                                                                     #
-    #   z_k = (α_k − μ_k) / σ_k      x_j = (µ_j − lo_j) / rng_j       #
-    #   ∂z_k/∂x_j = (∂α_k/∂µ_j) · rng_j / σ_k                          #
     # ------------------------------------------------------------------ #
-    # G_z_norm[i, k, j] = G_full[i, k, j] * X_rng[j] / alpha_sig[k]
-    G_z_norm = G_full * X_rng[None, None, :] / alpha_sig[None, :, None]
+    G_z_norm = _gradients_to_standardized(G_full, X_rng, alpha_sig)
     # Shape: (m_ge, R, p);  restrict to active dims for GE-GPR
     G_act_z_norm = G_z_norm[:, :, active_idx]   # (m_ge, R, p_act)
 
@@ -792,7 +817,15 @@ def _plot_parity(alpha_te_true, alpha_ge_pred, alpha_std_pred, R, m_ge, output_d
     plt.close(fig)
 
 
-def _plot_flux_samples(Y_te, Y_ge_pred, Y_std_pred, eps_ge, eps_std, x_qoi, output_dir):
+def _plot_flux_samples(Y_te, Y_ge_pred, Y_std_pred, eps_ge, eps_std, x_qoi, output_dir, switch_x=None):
+    """
+    switch_x : optional sequence, one array of x-locations per plotted
+    sample marking where that sample's own material composition switches
+    (e.g. the moving Void/Teflon interface and any fixed boundaries that
+    also fall in view). Locations outside x_qoi's range are skipped --
+    i.e. drawn only when relevant to what that sample's panel actually
+    shows. An empty array for a sample draws nothing.
+    """
     n_plot = min(4, Y_te.shape[1])
     fig, axes = plt.subplots(1, n_plot, figsize=(4.5 * n_plot, 4.2), sharey=False)
     if n_plot == 1:
@@ -802,6 +835,12 @@ def _plot_flux_samples(Y_te, Y_ge_pred, Y_std_pred, eps_ge, eps_std, x_qoi, outp
         ax.plot(x_qoi, Y_te[:, idx],      'k-',  lw=2.0, label=r'True $y(\mu)$')
         ax.plot(x_qoi, Y_ge_pred[:, idx], 'b--', lw=1.5, label=r'GE-GPR $\hat{y}$')
         ax.plot(x_qoi, Y_std_pred[:, idx],'r:',  lw=1.5, label=r'Std-GPR $\hat{y}$')
+        if switch_x is not None:
+            for j, xs in enumerate(
+                x for x in switch_x[idx] if x_qoi.min() <= x <= x_qoi.max()
+            ):
+                ax.axvline(xs, color='gray', ls='--', lw=1.0,
+                           label='Material switch' if j == 0 else None)
         ax.set_xlabel('x  [cm]', fontsize=10)
         ax.set_ylabel(r'$\phi(x;\mu)$', fontsize=10)
         ax.set_title(

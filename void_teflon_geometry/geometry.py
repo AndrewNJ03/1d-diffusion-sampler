@@ -170,6 +170,30 @@ def assign_void_teflon_properties(
     return D, Sigma_a, q, ab
 
 
+def material_boundaries(L, core_radius, shell_width, void_thickness=None):
+    """
+    x-locations where the mirrored slab's material composition switches.
+
+    Always includes the fixed Core/shell boundary (r = core_radius) and the
+    fixed Teflon/Shield boundary (r = core_radius + shell_width); when
+    void_thickness is given, also includes the moving Void/Teflon
+    interface (r = core_radius + void_thickness) -- the same radii
+    void_teflon_field() steps at. Each radius is reflected about the slab
+    center (x = L/2) to give both x = center - r and x = center + r.
+
+    Returns
+    -------
+    (N,) sorted x-locations, N = 4 (fixed boundaries only) or 6 (with the
+    moving Void/Teflon interface).
+    """
+    center = 0.5 * L
+    radii = [core_radius, core_radius + shell_width]
+    if void_thickness is not None:
+        radii.append(core_radius + void_thickness)
+    radii = np.asarray(radii, dtype=float)
+    return np.sort(np.concatenate([center - radii, center + radii]))
+
+
 def solve_void_teflon(
     L: float,
     n_cells: int,

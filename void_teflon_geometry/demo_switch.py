@@ -26,6 +26,7 @@ from second_order_solver import build_mesh, assign_material_properties, assemble
 from scipy.sparse.linalg import spsolve
 
 from geometry import void_teflon_field, solve_void_teflon
+from plotting import draw_material_boundaries
 
 # ------------------------------------------------------------------ #
 # Geometry (matches data/constantR_void_10/void.py)                  #
@@ -100,11 +101,8 @@ for steepness in steepnesses:
     )
     ax_flux.plot(x_c, phi_smooth, lw=1.3, label=f'Smooth switch  a={steepness}')
 
-for xb in (core_radius, core_radius + void_thickness,
-           L - core_radius - void_thickness, L - core_radius,
-           shield_thickness, L - shield_thickness):
-    ax_mat.axvline(xb, color='gray', ls=':', lw=0.6)
-    ax_flux.axvline(xb, color='gray', ls=':', lw=0.6)
+draw_material_boundaries(ax_mat, L, core_radius, shell_width, void_thickness, xlim=(0.0, L))
+draw_material_boundaries(ax_flux, L, core_radius, shell_width, void_thickness, xlim=(0.0, L))
 
 ax_mat.set_ylabel('D(x)  [a.u.]', fontsize=11)
 ax_mat.set_title('Smooth Void/Teflon switch vs. hard geometry', fontsize=12)

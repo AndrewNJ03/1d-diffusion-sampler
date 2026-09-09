@@ -30,6 +30,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'common'))
 from second_order_solver import build_mesh           # noqa: E402
 from geometry import solve_void_teflon               # noqa: E402
 from params import GeometryParamSampler              # noqa: E402
+from plotting import draw_material_boundaries        # noqa: E402
 
 
 def _mu_label(mu, sampler, fmt="{name}={val:.4g}"):
@@ -144,8 +145,18 @@ def main(
     # (falls back to void_thickness if nothing is active).
     sort_col = sampler.param_names.index(sampler.active_names[0]) if sampler.active_names else 0
     order = np.argsort(X_tr[ex_idx, sort_col])
+    vt_col = sampler.param_names.index("void_thickness")
+    drew_interface_label = False
     for k, idx in zip(range(N_EXAMPLES), ex_idx[order]):
         ax.plot(x_qoi, Y_tr[:, idx], color=colors[k], lw=1.4, label=_mu_label(X_tr[idx], sampler))
+        # Each snapshot has its own Void/Teflon interface location; only
+        # drawn when it actually falls inside the plotted QoI window.
+        drawn = draw_material_boundaries(
+            ax, L, core_radius, shell_width, void_thickness=X_tr[idx, vt_col],
+            xlim=(QOI_XMIN, QOI_XMAX), color=colors[k], ls='--', lw=1.0,
+            label='Void/Teflon interface' if not drew_interface_label else None,
+        )
+        drew_interface_label = drew_interface_label or len(drawn) > 0
 
     ax.axvline(QOI_XMIN, color='k', ls='--', lw=1.0, label='QoI boundary')
     ax.axvline(QOI_XMAX, color='k', ls='--', lw=1.0)

@@ -50,8 +50,10 @@ from second_order_solver import build_mesh                            # noqa: E4
 from adjoint_solver import build_adjoint_rhs, solve_adjoint            # noqa: E402
 from params import GeometryParamSampler                                # noqa: E402
 from adjoint_geometry import _forward_system, sensitivity_wrt_param    # noqa: E402
+from geometry import material_boundaries                               # noqa: E402
 from ge_gpr import (                                                   # noqa: E402
     GEGaussianProcess, _make_sklearn_kernel, _default_lc_sizes,
+    _load_pod_artifacts, _gradients_to_standardized,
     _plot_error_comparison, _plot_parity, _plot_flux_samples, _plot_learning_curve,
 )
 
@@ -154,17 +156,7 @@ def main(
     # 1. Load SVD/POD artifacts                                          #
     # ------------------------------------------------------------------ #
     print("\nStep 1: Loading SVD/POD artifacts")
-    Psi         = np.loadtxt(f"{output_dir}/pod_basis.txt",          comments='#')
-    alpha_train = np.loadtxt(f"{output_dir}/coefficients_train.txt", comments='#')
-    X_tr        = np.loadtxt(f"{output_dir}/samples_train.txt",      comments='#')
-    X_te        = np.loadtxt(f"{output_dir}/samples_test.txt",       comments='#')
-    Y_te_T      = np.loadtxt(f"{output_dir}/qoi_values_test.txt",    comments='#')
-    Y_te        = Y_te_T.T
-
-    if Psi.ndim == 1:
-        Psi = Psi[:, None]
-    if alpha_train.ndim == 1:
-        alpha_train = alpha_train[:, None]
+    Psi, alpha_train, X_tr, X_te, Y_te = _load_pod_artifacts(output_dir)
 
     Ny, R   = Psi.shape
     M_tr, p = X_tr.shape
@@ -230,7 +222,7 @@ def main(
     # Chain rule to standardised/normalised space (b's constant shift by
     # core_radius has zero derivative, so this is identical whether the
     # second input dimension is called void_thickness or b).
-    G_z_norm = G_full * X_rng[None, None, :] / alpha_sig[None, :, None]
+    G_z_norm = _gradients_to_standardized(G_full, X_rng, alpha_sig)
     G_act_z_norm = G_z_norm[:, :, active_idx]
 
     # ------------------------------------------------------------------ #
@@ -356,14 +348,25 @@ def main(
     # 7. Plots (generic ones reused unchanged from sklearn_implementation) #
     # ------------------------------------------------------------------ #
     print("\nStep 7: Generating plots")
+    vt_col = sampler.param_names.index("void_thickness")
+    a_col  = sampler.param_names.index("steepness")
+
+    # Each plotted test sample has its own material boundaries (the moving
+    # Void/Teflon interface plus any fixed boundaries); pass through all of
+    # them that actually fall inside the QoI window.
+    n_flux_plot = min(4, M_te)
+    switch_x = []
+    for i in range(n_flux_plot):
+        boundaries = material_boundaries(L, core_radius, shell_width, void_thickness=X_te[i, vt_col])
+        in_window = boundaries[(boundaries >= QOI_XMIN) & (boundaries <= QOI_XMAX)]
+        switch_x.append(in_window)
+
     _plot_error_comparison(eps_ge, eps_std, eps_proj, m_ge, R, output_dir)
     _plot_parity(alpha_te_true, alpha_ge_pred, alpha_std_pred, R, m_ge, output_dir)
-    _plot_flux_samples(Y_te, Y_ge_pred, Y_std_pred, eps_ge, eps_std, x_qoi, output_dir)
+    _plot_flux_samples(Y_te, Y_ge_pred, Y_std_pred, eps_ge, eps_std, x_qoi, output_dir, switch_x=switch_x)
     if lc_results:
         _plot_learning_curve(lc_results, output_dir)
 
-    vt_col = sampler.param_names.index("void_thickness")
-    a_col  = sampler.param_names.index("steepness")
     b_te = core_radius + X_te[:, vt_col]
     a_te = X_te[:, a_col]
     _plot_error_map_ab(b_te, a_te, eps_ge, eps_std, m_ge, output_dir)
