@@ -1,0 +1,694 @@
+/root/1d_diffusion_sampler/1d-diffusion-sampler/common/svd_analysis.py:346: UserWarning: FigureCanvasAgg is non-interactive, and thus cannot be shown
+  plt.show()
+/root/1d_diffusion_sampler/rom_sandbox/lib/python3.12/site-packages/sklearn/gaussian_process/kernels.py:445: ConvergenceWarning: The optimal value found for dimension 0 of parameter k2__noise_level is close to the specified lower bound 1e-06. Decreasing the bound and calling fit again may find a better value.
+  warnings.warn(
+/root/1d_diffusion_sampler/rom_sandbox/lib/python3.12/site-packages/sklearn/gaussian_process/kernels.py:445: ConvergenceWarning: The optimal value found for dimension 0 of parameter k2__noise_level is close to the specified lower bound 1e-06. Decreasing the bound and calling fit again may find a better value.
+  warnings.warn(
+/root/1d_diffusion_sampler/rom_sandbox/lib/python3.12/site-packages/sklearn/gaussian_process/kernels.py:445: ConvergenceWarning: The optimal value found for dimension 0 of parameter k2__noise_level is close to the specified lower bound 1e-06. Decreasing the bound and calling fit again may find a better value.
+  warnings.warn(
+/root/1d_diffusion_sampler/rom_sandbox/lib/python3.12/site-packages/sklearn/gaussian_process/kernels.py:445: ConvergenceWarning: The optimal value found for dimension 0 of parameter k2__noise_level is close to the specified lower bound 1e-06. Decreasing the bound and calling fit again may find a better value.
+  warnings.warn(
+/root/1d_diffusion_sampler/rom_sandbox/lib/python3.12/site-packages/sklearn/gaussian_process/kernels.py:445: ConvergenceWarning: The optimal value found for dimension 0 of parameter k2__noise_level is close to the specified lower bound 1e-06. Decreasing the bound and calling fit again may find a better value.
+  warnings.warn(
+/root/1d_diffusion_sampler/rom_sandbox/lib/python3.12/site-packages/sklearn/gaussian_process/kernels.py:445: ConvergenceWarning: The optimal value found for dimension 0 of parameter k2__noise_level is close to the specified lower bound 1e-06. Decreasing the bound and calling fit again may find a better value.
+  warnings.warn(
+/root/1d_diffusion_sampler/rom_sandbox/lib/python3.12/site-packages/sklearn/gaussian_process/kernels.py:445: ConvergenceWarning: The optimal value found for dimension 0 of parameter k2__noise_level is close to the specified lower bound 1e-06. Decreasing the bound and calling fit again may find a better value.
+  warnings.warn(
+/root/1d_diffusion_sampler/1d-diffusion-sampler/common/svd_analysis.py:346: UserWarning: FigureCanvasAgg is non-interactive, and thus cannot be shown
+  plt.show()
+/root/1d_diffusion_sampler/rom_sandbox/lib/python3.12/site-packages/sklearn/gaussian_process/_gpr.py:667: ConvergenceWarning: lbfgs failed to converge after 23 iteration(s) (status=2):
+ABNORMAL: 
+
+You might also want to scale the data as shown in:
+    https://scikit-learn.org/stable/modules/preprocessing.html
+  _check_optimize_result("lbfgs", opt_res)
+/root/1d_diffusion_sampler/rom_sandbox/lib/python3.12/site-packages/sklearn/gaussian_process/_gpr.py:667: ConvergenceWarning: lbfgs failed to converge after 20 iteration(s) (status=2):
+ABNORMAL: 
+
+You might also want to scale the data as shown in:
+    https://scikit-learn.org/stable/modules/preprocessing.html
+  _check_optimize_result("lbfgs", opt_res)
+/root/1d_diffusion_sampler/rom_sandbox/lib/python3.12/site-packages/sklearn/gaussian_process/kernels.py:455: ConvergenceWarning: The optimal value found for dimension 0 of parameter k1__k1__constant_value is close to the specified upper bound 1000.0. Increasing the bound and calling fit again may find a better value.
+  warnings.warn(
+/root/1d_diffusion_sampler/rom_sandbox/lib/python3.12/site-packages/sklearn/gaussian_process/kernels.py:445: ConvergenceWarning: The optimal value found for dimension 0 of parameter k2__noise_level is close to the specified lower bound 1e-06. Decreasing the bound and calling fit again may find a better value.
+  warnings.warn(
+/root/1d_diffusion_sampler/rom_sandbox/lib/python3.12/site-packages/sklearn/gaussian_process/kernels.py:445: ConvergenceWarning: The optimal value found for dimension 0 of parameter k2__noise_level is close to the specified lower bound 1e-06. Decreasing the bound and calling fit again may find a better value.
+  warnings.warn(
+/root/1d_diffusion_sampler/rom_sandbox/lib/python3.12/site-packages/sklearn/gaussian_process/kernels.py:445: ConvergenceWarning: The optimal value found for dimension 0 of parameter k2__noise_level is close to the specified lower bound 1e-06. Decreasing the bound and calling fit again may find a better value.
+  warnings.warn(
+/root/1d_diffusion_sampler/rom_sandbox/lib/python3.12/site-packages/sklearn/gaussian_process/kernels.py:445: ConvergenceWarning: The optimal value found for dimension 0 of parameter k2__noise_level is close to the specified lower bound 1e-06. Decreasing the bound and calling fit again may find a better value.
+  warnings.warn(
+/root/1d_diffusion_sampler/rom_sandbox/lib/python3.12/site-packages/sklearn/gaussian_process/_gpr.py:667: ConvergenceWarning: lbfgs failed to converge after 16 iteration(s) (status=2):
+ABNORMAL: 
+
+You might also want to scale the data as shown in:
+    https://scikit-learn.org/stable/modules/preprocessing.html
+  _check_optimize_result("lbfgs", opt_res)
+/root/1d_diffusion_sampler/rom_sandbox/lib/python3.12/site-packages/sklearn/gaussian_process/kernels.py:445: ConvergenceWarning: The optimal value found for dimension 0 of parameter k2__noise_level is close to the specified lower bound 1e-06. Decreasing the bound and calling fit again may find a better value.
+  warnings.warn(
+/root/1d_diffusion_sampler/rom_sandbox/lib/python3.12/site-packages/sklearn/gaussian_process/_gpr.py:667: ConvergenceWarning: lbfgs failed to converge after 13 iteration(s) (status=2):
+ABNORMAL: 
+
+You might also want to scale the data as shown in:
+    https://scikit-learn.org/stable/modules/preprocessing.html
+  _check_optimize_result("lbfgs", opt_res)
+/root/1d_diffusion_sampler/rom_sandbox/lib/python3.12/site-packages/sklearn/gaussian_process/kernels.py:445: ConvergenceWarning: The optimal value found for dimension 0 of parameter k2__noise_level is close to the specified lower bound 1e-06. Decreasing the bound and calling fit again may find a better value.
+  warnings.warn(
+/root/1d_diffusion_sampler/rom_sandbox/lib/python3.12/site-packages/sklearn/gaussian_process/kernels.py:455: ConvergenceWarning: The optimal value found for dimension 0 of parameter k1__k1__constant_value is close to the specified upper bound 1000.0. Increasing the bound and calling fit again may find a better value.
+  warnings.warn(
+/root/1d_diffusion_sampler/rom_sandbox/lib/python3.12/site-packages/sklearn/gaussian_process/kernels.py:445: ConvergenceWarning: The optimal value found for dimension 0 of parameter k2__noise_level is close to the specified lower bound 1e-06. Decreasing the bound and calling fit again may find a better value.
+  warnings.warn(
+
+######################################################################
+# Parameter: D  (material)
+######################################################################
+QoI interval  : [3.000, 7.000] cm  (Ny=80 of 200 cells)
+  Solving 500 training snapshots
+  Solving 100 test snapshots
+Y_tr : (80, 500),  Y_te : (80, 100)
+Saved: samples_train.txt  (500 x 3),  qoi_values_train.txt  (500 x 80)
+Saved: samples_test.txt  (100 x 3),  qoi_values_test.txt  (100 x 80)
+Saved: /root/1d_diffusion_sampler/1d-diffusion-sampler/gpr_vs_gegpr_comparison/D/qoi_snapshots.png
+
+Computing thin SVD of Y_tr  (training snapshots only)
+Singular values (first 10): [3.566487e+02 2.193700e+00 1.290000e-02 0.000000e+00 0.000000e+00
+ 0.000000e+00 0.000000e+00 0.000000e+00 0.000000e+00 0.000000e+00]
+
+Modes for 99.9  % energy : 1
+Modes for 99.99 % energy : 1
+Using r = 1  (η = 0.999)
+Coefficient matrix A_alpha: (1, 500)  (R x M_train)
+Saved: /root/1d_diffusion_sampler/1d-diffusion-sampler/gpr_vs_gegpr_comparison/D/pod_basis.txt            (80 x 1)
+Saved: /root/1d_diffusion_sampler/1d-diffusion-sampler/gpr_vs_gegpr_comparison/D/coefficients_train.txt   (500 x 1)
+Saved: /root/1d_diffusion_sampler/1d-diffusion-sampler/gpr_vs_gegpr_comparison/D/svd_spectrum.png
+Saved: /root/1d_diffusion_sampler/1d-diffusion-sampler/gpr_vs_gegpr_comparison/D/svd_modes.png
+Saved: /root/1d_diffusion_sampler/1d-diffusion-sampler/gpr_vs_gegpr_comparison/D/svd_reconstruction.png
+Saved: /root/1d_diffusion_sampler/1d-diffusion-sampler/gpr_vs_gegpr_comparison/D/svd_proj_error.png
+
+=== SVD summary ===
+  QoI interval          : [3.000, 7.000] cm
+  QoI dimension Ny      : 80
+  Train snapshots M_tr  : 500
+  Test  snapshots M_te  : 100
+  Snapshot matrix Y_tr  : (80, 500)
+  Coefficient matrix    : (1, 500)  (R x M_train)
+  sigma_1               : 356.6487
+  sigma_1 / sigma_2     : 162.581
+  Energy in mode 1      : 100.00 %
+  Modes for η = 99.9  % : 1
+  Modes for η = 99.99 % : 1
+  Chosen rank R         : 1
+  ||Y_tr-Y_R||_F/||Y_tr||_F : 6.15e-03
+
+  Test ε_proj (r=1) — median : 5.41e-03,  max : 1.26e-02
+============================================================
+GE-GPR — Gradient-Enhanced Gaussian Process Regression
+============================================================
+
+Step 1: Loading SVD/POD artifacts
+  POD basis  Ψ  : 80 × 1
+  Train samples : 500  (using 100 for GE-GPR)
+  Test samples  : 100,  p = 3
+
+Step 2: Building sampler and normalising inputs
+  Active (non-fixed) parameters: 1/3
+  Active indices: [0]
+  Active names  : ['D_1']
+
+Step 3: Computing adjoint gradients for 100 training samples (1 mode each) …
+  Done in 0.1s
+
+Step 4: Fitting GE-GPR and standard GPR (m_ge=100, R=1, p_act=1, restarts=3)
+
+  Mode 1/1
+    GE-GPR  log-MLL = 1128.503   (10.5s)
+    Std-GPR log-MLL =  556.668   (0.3s)
+
+Step 5: Predicting on test set
+
+============================================================
+Test reconstruction errors  (m_ge=100, M_te=100, R=1)
+  ε_y  GE-GPR      :  median=5.41e-03  max=1.26e-02
+  ε_y  Std GPR     :  median=5.41e-03  max=1.26e-02
+  ε_proj (POD lb)  :  median=5.41e-03  max=1.26e-02
+============================================================
+
+Step 6: Learning curve  (sizes: [10, 20, 30, 50, 75, 100])
+  M=  10:  GE-GPR ε_y=5.41e-03   Std-GPR ε_y=5.41e-03
+  M=  20:  GE-GPR ε_y=5.41e-03   Std-GPR ε_y=5.41e-03
+  M=  30:  GE-GPR ε_y=5.41e-03   Std-GPR ε_y=5.41e-03
+  M=  50:  GE-GPR ε_y=5.41e-03   Std-GPR ε_y=5.41e-03
+  M=  75:  GE-GPR ε_y=5.41e-03   Std-GPR ε_y=5.41e-03
+  M= 100:  GE-GPR ε_y=5.41e-03   Std-GPR ε_y=5.41e-03
+
+Step 7: Generating plots
+  Saved: /root/1d_diffusion_sampler/1d-diffusion-sampler/gpr_vs_gegpr_comparison/D/gegpr_error_comparison.png
+  Saved: /root/1d_diffusion_sampler/1d-diffusion-sampler/gpr_vs_gegpr_comparison/D/gegpr_parity.png
+  Saved: /root/1d_diffusion_sampler/1d-diffusion-sampler/gpr_vs_gegpr_comparison/D/gegpr_flux_reconstruction.png
+  Saved: /root/1d_diffusion_sampler/1d-diffusion-sampler/gpr_vs_gegpr_comparison/D/gegpr_learning_curve.png
+
+GE-GPR stage complete.  All plots saved to /root/1d_diffusion_sampler/1d-diffusion-sampler/gpr_vs_gegpr_comparison/D/
+
+######################################################################
+# Parameter: Sigma_a  (material)
+######################################################################
+QoI interval  : [3.000, 7.000] cm  (Ny=80 of 200 cells)
+  Solving 500 training snapshots
+  Solving 100 test snapshots
+Y_tr : (80, 500),  Y_te : (80, 100)
+Saved: samples_train.txt  (500 x 3),  qoi_values_train.txt  (500 x 80)
+Saved: samples_test.txt  (100 x 3),  qoi_values_test.txt  (100 x 80)
+Saved: /root/1d_diffusion_sampler/1d-diffusion-sampler/gpr_vs_gegpr_comparison/Sigma_a/qoi_snapshots.png
+
+Computing thin SVD of Y_tr  (training snapshots only)
+Singular values (first 10): [4.618981e+02 4.879500e+00 4.440000e-02 3.000000e-04 0.000000e+00
+ 0.000000e+00 0.000000e+00 0.000000e+00 0.000000e+00 0.000000e+00]
+
+Modes for 99.9  % energy : 1
+Modes for 99.99 % energy : 2
+Using r = 1  (η = 0.999)
+Coefficient matrix A_alpha: (1, 500)  (R x M_train)
+Saved: /root/1d_diffusion_sampler/1d-diffusion-sampler/gpr_vs_gegpr_comparison/Sigma_a/pod_basis.txt            (80 x 1)
+Saved: /root/1d_diffusion_sampler/1d-diffusion-sampler/gpr_vs_gegpr_comparison/Sigma_a/coefficients_train.txt   (500 x 1)
+Saved: /root/1d_diffusion_sampler/1d-diffusion-sampler/gpr_vs_gegpr_comparison/Sigma_a/svd_spectrum.png
+Saved: /root/1d_diffusion_sampler/1d-diffusion-sampler/gpr_vs_gegpr_comparison/Sigma_a/svd_modes.png
+Saved: /root/1d_diffusion_sampler/1d-diffusion-sampler/gpr_vs_gegpr_comparison/Sigma_a/svd_reconstruction.png
+Saved: /root/1d_diffusion_sampler/1d-diffusion-sampler/gpr_vs_gegpr_comparison/Sigma_a/svd_proj_error.png
+
+=== SVD summary ===
+  QoI interval          : [3.000, 7.000] cm
+  QoI dimension Ny      : 80
+  Train snapshots M_tr  : 500
+  Test  snapshots M_te  : 100
+  Snapshot matrix Y_tr  : (80, 500)
+  Coefficient matrix    : (1, 500)  (R x M_train)
+  sigma_1               : 461.8981
+  sigma_1 / sigma_2     : 94.661
+  Energy in mode 1      : 99.99 %
+  Modes for η = 99.9  % : 1
+  Modes for η = 99.99 % : 2
+  Chosen rank R         : 1
+  ||Y_tr-Y_R||_F/||Y_tr||_F : 1.06e-02
+
+  Test ε_proj (r=1) — median : 1.83e-02,  max : 2.80e-02
+============================================================
+GE-GPR — Gradient-Enhanced Gaussian Process Regression
+============================================================
+
+Step 1: Loading SVD/POD artifacts
+  POD basis  Ψ  : 80 × 1
+  Train samples : 500  (using 100 for GE-GPR)
+  Test samples  : 100,  p = 3
+
+Step 2: Building sampler and normalising inputs
+  Active (non-fixed) parameters: 1/3
+  Active indices: [1]
+  Active names  : ['Sigma_a_1']
+
+Step 3: Computing adjoint gradients for 100 training samples (1 mode each) …
+  Done in 0.2s
+
+Step 4: Fitting GE-GPR and standard GPR (m_ge=100, R=1, p_act=1, restarts=3)
+
+  Mode 1/1
+    GE-GPR  log-MLL =  876.508   (7.7s)
+    Std-GPR log-MLL =  457.289   (0.4s)
+
+Step 5: Predicting on test set
+
+============================================================
+Test reconstruction errors  (m_ge=100, M_te=100, R=1)
+  ε_y  GE-GPR      :  median=1.83e-02  max=2.80e-02
+  ε_y  Std GPR     :  median=1.83e-02  max=2.80e-02
+  ε_proj (POD lb)  :  median=1.83e-02  max=2.80e-02
+============================================================
+
+Step 6: Learning curve  (sizes: [10, 20, 30, 50, 75, 100])
+  M=  10:  GE-GPR ε_y=2.02e-02   Std-GPR ε_y=2.50e-02
+  M=  20:  GE-GPR ε_y=1.83e-02   Std-GPR ε_y=2.16e-02
+  M=  30:  GE-GPR ε_y=1.83e-02   Std-GPR ε_y=1.83e-02
+  M=  50:  GE-GPR ε_y=1.83e-02   Std-GPR ε_y=1.83e-02
+  M=  75:  GE-GPR ε_y=1.83e-02   Std-GPR ε_y=1.83e-02
+  M= 100:  GE-GPR ε_y=1.83e-02   Std-GPR ε_y=1.83e-02
+
+Step 7: Generating plots
+  Saved: /root/1d_diffusion_sampler/1d-diffusion-sampler/gpr_vs_gegpr_comparison/Sigma_a/gegpr_error_comparison.png
+  Saved: /root/1d_diffusion_sampler/1d-diffusion-sampler/gpr_vs_gegpr_comparison/Sigma_a/gegpr_parity.png
+  Saved: /root/1d_diffusion_sampler/1d-diffusion-sampler/gpr_vs_gegpr_comparison/Sigma_a/gegpr_flux_reconstruction.png
+/root/1d_diffusion_sampler/1d-diffusion-sampler/common/svd_analysis.py:346: UserWarning: FigureCanvasAgg is non-interactive, and thus cannot be shown
+  plt.show()
+/root/1d_diffusion_sampler/rom_sandbox/lib/python3.12/site-packages/sklearn/gaussian_process/_gpr.py:667: ConvergenceWarning: lbfgs failed to converge after 13 iteration(s) (status=2):
+ABNORMAL: 
+
+You might also want to scale the data as shown in:
+    https://scikit-learn.org/stable/modules/preprocessing.html
+  _check_optimize_result("lbfgs", opt_res)
+/root/1d_diffusion_sampler/rom_sandbox/lib/python3.12/site-packages/sklearn/gaussian_process/kernels.py:455: ConvergenceWarning: The optimal value found for dimension 0 of parameter k1__k1__constant_value is close to the specified upper bound 1000.0. Increasing the bound and calling fit again may find a better value.
+  warnings.warn(
+/root/1d_diffusion_sampler/rom_sandbox/lib/python3.12/site-packages/sklearn/gaussian_process/kernels.py:445: ConvergenceWarning: The optimal value found for dimension 0 of parameter k2__noise_level is close to the specified lower bound 1e-06. Decreasing the bound and calling fit again may find a better value.
+  warnings.warn(
+/root/1d_diffusion_sampler/rom_sandbox/lib/python3.12/site-packages/sklearn/gaussian_process/kernels.py:455: ConvergenceWarning: The optimal value found for dimension 0 of parameter k1__k1__constant_value is close to the specified upper bound 1000.0. Increasing the bound and calling fit again may find a better value.
+  warnings.warn(
+/root/1d_diffusion_sampler/rom_sandbox/lib/python3.12/site-packages/sklearn/gaussian_process/kernels.py:445: ConvergenceWarning: The optimal value found for dimension 0 of parameter k2__noise_level is close to the specified lower bound 1e-06. Decreasing the bound and calling fit again may find a better value.
+  warnings.warn(
+/root/1d_diffusion_sampler/rom_sandbox/lib/python3.12/site-packages/sklearn/gaussian_process/kernels.py:455: ConvergenceWarning: The optimal value found for dimension 0 of parameter k1__k1__constant_value is close to the specified upper bound 1000.0. Increasing the bound and calling fit again may find a better value.
+  warnings.warn(
+/root/1d_diffusion_sampler/rom_sandbox/lib/python3.12/site-packages/sklearn/gaussian_process/kernels.py:445: ConvergenceWarning: The optimal value found for dimension 0 of parameter k2__noise_level is close to the specified lower bound 1e-06. Decreasing the bound and calling fit again may find a better value.
+  warnings.warn(
+/root/1d_diffusion_sampler/rom_sandbox/lib/python3.12/site-packages/sklearn/gaussian_process/_gpr.py:667: ConvergenceWarning: lbfgs failed to converge after 21 iteration(s) (status=2):
+ABNORMAL: 
+
+You might also want to scale the data as shown in:
+    https://scikit-learn.org/stable/modules/preprocessing.html
+  _check_optimize_result("lbfgs", opt_res)
+/root/1d_diffusion_sampler/rom_sandbox/lib/python3.12/site-packages/sklearn/gaussian_process/kernels.py:455: ConvergenceWarning: The optimal value found for dimension 0 of parameter k1__k1__constant_value is close to the specified upper bound 1000.0. Increasing the bound and calling fit again may find a better value.
+  warnings.warn(
+/root/1d_diffusion_sampler/rom_sandbox/lib/python3.12/site-packages/sklearn/gaussian_process/kernels.py:445: ConvergenceWarning: The optimal value found for dimension 0 of parameter k2__noise_level is close to the specified lower bound 1e-06. Decreasing the bound and calling fit again may find a better value.
+  warnings.warn(
+/root/1d_diffusion_sampler/rom_sandbox/lib/python3.12/site-packages/sklearn/gaussian_process/kernels.py:455: ConvergenceWarning: The optimal value found for dimension 0 of parameter k1__k1__constant_value is close to the specified upper bound 1000.0. Increasing the bound and calling fit again may find a better value.
+  warnings.warn(
+/root/1d_diffusion_sampler/rom_sandbox/lib/python3.12/site-packages/sklearn/gaussian_process/kernels.py:445: ConvergenceWarning: The optimal value found for dimension 0 of parameter k2__noise_level is close to the specified lower bound 1e-06. Decreasing the bound and calling fit again may find a better value.
+  warnings.warn(
+/root/1d_diffusion_sampler/rom_sandbox/lib/python3.12/site-packages/sklearn/gaussian_process/kernels.py:455: ConvergenceWarning: The optimal value found for dimension 0 of parameter k1__k1__constant_value is close to the specified upper bound 1000.0. Increasing the bound and calling fit again may find a better value.
+  warnings.warn(
+/root/1d_diffusion_sampler/rom_sandbox/lib/python3.12/site-packages/sklearn/gaussian_process/kernels.py:445: ConvergenceWarning: The optimal value found for dimension 0 of parameter k2__noise_level is close to the specified lower bound 1e-06. Decreasing the bound and calling fit again may find a better value.
+  warnings.warn(
+/root/1d_diffusion_sampler/rom_sandbox/lib/python3.12/site-packages/sklearn/gaussian_process/_gpr.py:667: ConvergenceWarning: lbfgs failed to converge after 13 iteration(s) (status=2):
+ABNORMAL: 
+
+You might also want to scale the data as shown in:
+    https://scikit-learn.org/stable/modules/preprocessing.html
+  _check_optimize_result("lbfgs", opt_res)
+/root/1d_diffusion_sampler/rom_sandbox/lib/python3.12/site-packages/sklearn/gaussian_process/kernels.py:455: ConvergenceWarning: The optimal value found for dimension 0 of parameter k1__k1__constant_value is close to the specified upper bound 1000.0. Increasing the bound and calling fit again may find a better value.
+  warnings.warn(
+/root/1d_diffusion_sampler/rom_sandbox/lib/python3.12/site-packages/sklearn/gaussian_process/kernels.py:445: ConvergenceWarning: The optimal value found for dimension 0 of parameter k2__noise_level is close to the specified lower bound 1e-06. Decreasing the bound and calling fit again may find a better value.
+  warnings.warn(
+/root/1d_diffusion_sampler/rom_sandbox/lib/python3.12/site-packages/sklearn/gaussian_process/kernels.py:445: ConvergenceWarning: The optimal value found for dimension 0 of parameter k2__noise_level is close to the specified lower bound 1e-06. Decreasing the bound and calling fit again may find a better value.
+  warnings.warn(
+/root/1d_diffusion_sampler/rom_sandbox/lib/python3.12/site-packages/sklearn/gaussian_process/kernels.py:445: ConvergenceWarning: The optimal value found for dimension 0 of parameter k2__noise_level is close to the specified lower bound 1e-06. Decreasing the bound and calling fit again may find a better value.
+  warnings.warn(
+/root/1d_diffusion_sampler/rom_sandbox/lib/python3.12/site-packages/sklearn/gaussian_process/kernels.py:445: ConvergenceWarning: The optimal value found for dimension 0 of parameter k2__noise_level is close to the specified lower bound 1e-06. Decreasing the bound and calling fit again may find a better value.
+  warnings.warn(
+/root/1d_diffusion_sampler/rom_sandbox/lib/python3.12/site-packages/sklearn/gaussian_process/kernels.py:445: ConvergenceWarning: The optimal value found for dimension 0 of parameter k2__noise_level is close to the specified lower bound 1e-06. Decreasing the bound and calling fit again may find a better value.
+  warnings.warn(
+  Saved: /root/1d_diffusion_sampler/1d-diffusion-sampler/gpr_vs_gegpr_comparison/Sigma_a/gegpr_learning_curve.png
+
+GE-GPR stage complete.  All plots saved to /root/1d_diffusion_sampler/1d-diffusion-sampler/gpr_vs_gegpr_comparison/Sigma_a/
+
+######################################################################
+# Parameter: q  (material)
+######################################################################
+QoI interval  : [3.000, 7.000] cm  (Ny=80 of 200 cells)
+  Solving 500 training snapshots
+  Solving 100 test snapshots
+Y_tr : (80, 500),  Y_te : (80, 100)
+Saved: samples_train.txt  (500 x 3),  qoi_values_train.txt  (500 x 80)
+Saved: samples_test.txt  (100 x 3),  qoi_values_test.txt  (100 x 80)
+Saved: /root/1d_diffusion_sampler/1d-diffusion-sampler/gpr_vs_gegpr_comparison/q/qoi_snapshots.png
+
+Computing thin SVD of Y_tr  (training snapshots only)
+Singular values (first 10): [424.496   0.      0.      0.      0.      0.      0.      0.      0.
+   0.   ]
+
+Modes for 99.9  % energy : 1
+Modes for 99.99 % energy : 1
+Using r = 1  (η = 0.999)
+Coefficient matrix A_alpha: (1, 500)  (R x M_train)
+Saved: /root/1d_diffusion_sampler/1d-diffusion-sampler/gpr_vs_gegpr_comparison/q/pod_basis.txt            (80 x 1)
+Saved: /root/1d_diffusion_sampler/1d-diffusion-sampler/gpr_vs_gegpr_comparison/q/coefficients_train.txt   (500 x 1)
+Saved: /root/1d_diffusion_sampler/1d-diffusion-sampler/gpr_vs_gegpr_comparison/q/svd_spectrum.png
+Saved: /root/1d_diffusion_sampler/1d-diffusion-sampler/gpr_vs_gegpr_comparison/q/svd_modes.png
+Saved: /root/1d_diffusion_sampler/1d-diffusion-sampler/gpr_vs_gegpr_comparison/q/svd_reconstruction.png
+Saved: /root/1d_diffusion_sampler/1d-diffusion-sampler/gpr_vs_gegpr_comparison/q/svd_proj_error.png
+
+=== SVD summary ===
+  QoI interval          : [3.000, 7.000] cm
+  QoI dimension Ny      : 80
+  Train snapshots M_tr  : 500
+  Test  snapshots M_te  : 100
+  Snapshot matrix Y_tr  : (80, 500)
+  Coefficient matrix    : (1, 500)  (R x M_train)
+  sigma_1               : 424.4960
+  sigma_1 / sigma_2     : 3400307662513176.000
+  Energy in mode 1      : 100.00 %
+  Modes for η = 99.9  % : 1
+  Modes for η = 99.99 % : 1
+  Chosen rank R         : 1
+  ||Y_tr-Y_R||_F/||Y_tr||_F : 9.40e-16
+
+  Test ε_proj (r=1) — median : 4.29e-16,  max : 6.92e-16
+============================================================
+GE-GPR — Gradient-Enhanced Gaussian Process Regression
+============================================================
+
+Step 1: Loading SVD/POD artifacts
+  POD basis  Ψ  : 80 × 1
+  Train samples : 500  (using 100 for GE-GPR)
+  Test samples  : 100,  p = 3
+
+Step 2: Building sampler and normalising inputs
+  Active (non-fixed) parameters: 1/3
+  Active indices: [2]
+  Active names  : ['q_1']
+
+Step 3: Computing adjoint gradients for 100 training samples (1 mode each) …
+  Done in 0.2s
+
+Step 4: Fitting GE-GPR and standard GPR (m_ge=100, R=1, p_act=1, restarts=3)
+
+  Mode 1/1
+    GE-GPR  log-MLL = 1164.832   (3.0s)
+    Std-GPR log-MLL =  571.511   (0.3s)
+
+Step 5: Predicting on test set
+
+============================================================
+Test reconstruction errors  (m_ge=100, M_te=100, R=1)
+  ε_y  GE-GPR      :  median=1.25e-06  max=1.57e-05
+  ε_y  Std GPR     :  median=3.26e-05  max=5.97e-03
+  ε_proj (POD lb)  :  median=2.72e-07  max=3.99e-07
+============================================================
+
+Step 6: Learning curve  (sizes: [10, 20, 30, 50, 75, 100])
+  M=  10:  GE-GPR ε_y=4.78e-06   Std-GPR ε_y=7.20e-05
+  M=  20:  GE-GPR ε_y=5.07e-06   Std-GPR ε_y=5.17e-05
+  M=  30:  GE-GPR ε_y=8.09e-06   Std-GPR ε_y=3.94e-05
+  M=  50:  GE-GPR ε_y=5.11e-06   Std-GPR ε_y=3.73e-05
+  M=  75:  GE-GPR ε_y=6.17e-06   Std-GPR ε_y=3.32e-05
+  M= 100:  GE-GPR ε_y=1.25e-06   Std-GPR ε_y=3.26e-05
+
+Step 7: Generating plots
+  Saved: /root/1d_diffusion_sampler/1d-diffusion-sampler/gpr_vs_gegpr_comparison/q/gegpr_error_comparison.png
+  Saved: /root/1d_diffusion_sampler/1d-diffusion-sampler/gpr_vs_gegpr_comparison/q/gegpr_parity.png
+  Saved: /root/1d_diffusion_sampler/1d-diffusion-sampler/gpr_vs_gegpr_comparison/q/gegpr_flux_reconstruction.png
+  Saved: /root/1d_diffusion_sampler/1d-diffusion-sampler/gpr_vs_gegpr_comparison/q/gegpr_learning_curve.png
+
+GE-GPR stage complete.  All plots saved to /root/1d_diffusion_sampler/1d-diffusion-sampler/gpr_vs_gegpr_comparison/q/
+
+######################################################################
+# Parameter: void_thickness  (geometry)
+######################################################################
+============================================================
+GE-GPR vs Std-GPR — void_teflon geometry  (a=steepness, b=interface center)
+============================================================
+
+Step 0: Running SVD/POD stage (energy_threshold=0.99999)
+============================================================
+Geometry-parameterized ROM — SVD / POD analysis
+============================================================
+  Geometry: L=1.0, core_radius=0.16921, shield_thickness=0.07801, shell_width=0.25278
+  void_thickness bounds: (0.001, 0.25)   steepness bounds: (200.0, 200.0)
+  Active parameter(s): ['void_thickness']
+QoI interval  : [0.1692, 0.4220] cm  (Ny=885 of 3500 cells)
+  Solving 300 training snapshots
+  Solving 60 test snapshots
+Y_tr : (885, 300),  Y_te : (885, 60)
+Saved: samples_train.txt  (300 x 2),  qoi_values_train.txt  (300 x 885)
+Saved: samples_test.txt  (60 x 2),  qoi_values_test.txt  (60 x 885)
+Saved: /root/1d_diffusion_sampler/1d-diffusion-sampler/gpr_vs_gegpr_comparison/void_thickness/qoi_snapshots.png
+
+Computing thin SVD of Y_tr  (training snapshots only)
+Singular values (first 10): [4.20163e+01 1.06670e+00 3.76500e-01 1.06700e-01 9.56000e-02 4.41000e-02
+ 3.00000e-02 1.74000e-02 1.13000e-02 7.20000e-03]
+
+Modes for 99.9  % energy : 1
+Modes for 99.99 % energy : 2
+Using r = 4  (eta = 0.99999)
+Coefficient matrix A_alpha: (4, 300)  (R x M_train)
+Saved: /root/1d_diffusion_sampler/1d-diffusion-sampler/gpr_vs_gegpr_comparison/void_thickness/pod_basis.txt            (885 x 4)
+Saved: /root/1d_diffusion_sampler/1d-diffusion-sampler/gpr_vs_gegpr_comparison/void_thickness/coefficients_train.txt   (300 x 4)
+Saved: /root/1d_diffusion_sampler/1d-diffusion-sampler/gpr_vs_gegpr_comparison/void_thickness/svd_spectrum.png
+Saved: /root/1d_diffusion_sampler/1d-diffusion-sampler/gpr_vs_gegpr_comparison/void_thickness/svd_modes.png
+Saved: /root/1d_diffusion_sampler/1d-diffusion-sampler/gpr_vs_gegpr_comparison/void_thickness/svd_reconstruction.png
+Saved: /root/1d_diffusion_sampler/1d-diffusion-sampler/gpr_vs_gegpr_comparison/void_thickness/svd_proj_error.png
+
+=== SVD summary (geometry parameter) ===
+  QoI interval          : [0.1692, 0.4220] cm
+  QoI dimension Ny      : 885
+  Train snapshots M_tr  : 300
+  Test  snapshots M_te  : 60
+  Snapshot matrix Y_tr  : (885, 300)
+  Coefficient matrix    : (4, 300)  (R x M_train)
+  sigma_1               : 42.0163
+  sigma_1 / sigma_2     : 39.390
+  Energy in mode 1      : 99.9262 %
+  Modes for eta = 99.9  % : 1
+  Modes for eta = 99.99 % : 2
+  Chosen rank R         : 4
+  ||Y_tr-Y_R||_F/||Y_tr||_F : 2.66e-03
+
+  Test eps_proj (r=4) -- median : 2.56e-03,  max : 6.00e-03
+
+Step 1: Loading SVD/POD artifacts
+  POD basis  Psi : 885 x 4
+  Train samples  : 300  (using 100 for GE-GPR)
+  Test samples   : 60,  p = 2,  active = ['void_thickness']
+
+Step 2: Normalising inputs and standardising outputs
+
+Step 3: Computing adjoint gradients d(alpha_k)/da, d(alpha_k)/db for 100 training samples (4 modes each) ...
+  Done in 2.2s
+
+Step 4: Fitting GE-GPR and standard GPR (m_ge=100, R=4, p_act=1, restarts=3)
+
+  Mode 1/4
+    GE-GPR  log-MLL =  961.668   (15.3s)
+    Std-GPR log-MLL =  514.079   (0.4s)
+
+  Mode 2/4
+    GE-GPR  log-MLL =  946.253   (21.3s)
+    Std-GPR log-MLL =  500.512   (0.4s)
+
+  Mode 3/4
+    GE-GPR  log-MLL =  913.089   (10.5s)
+    Std-GPR log-MLL =  480.689   (0.4s)
+
+  Mode 4/4
+    GE-GPR  log-MLL =  858.981   (21.5s)
+    Std-GPR log-MLL =  451.633   (0.3s)
+
+Step 5: Predicting on test set
+
+============================================================
+Test reconstruction errors  (m_ge=100, M_te=60, R=4)
+  eps_y  GE-GPR      :  median=2.56e-03  max=6.00e-03
+/root/1d_diffusion_sampler/rom_sandbox/lib/python3.12/site-packages/sklearn/gaussian_process/kernels.py:445: ConvergenceWarning: The optimal value found for dimension 0 of parameter k2__noise_level is close to the specified lower bound 1e-06. Decreasing the bound and calling fit again may find a better value.
+  warnings.warn(
+/root/1d_diffusion_sampler/rom_sandbox/lib/python3.12/site-packages/sklearn/gaussian_process/kernels.py:445: ConvergenceWarning: The optimal value found for dimension 0 of parameter k2__noise_level is close to the specified lower bound 1e-06. Decreasing the bound and calling fit again may find a better value.
+  warnings.warn(
+/root/1d_diffusion_sampler/rom_sandbox/lib/python3.12/site-packages/sklearn/gaussian_process/kernels.py:445: ConvergenceWarning: The optimal value found for dimension 0 of parameter k2__noise_level is close to the specified lower bound 1e-06. Decreasing the bound and calling fit again may find a better value.
+  warnings.warn(
+/root/1d_diffusion_sampler/rom_sandbox/lib/python3.12/site-packages/sklearn/gaussian_process/kernels.py:445: ConvergenceWarning: The optimal value found for dimension 0 of parameter k2__noise_level is close to the specified lower bound 1e-06. Decreasing the bound and calling fit again may find a better value.
+  warnings.warn(
+/root/1d_diffusion_sampler/rom_sandbox/lib/python3.12/site-packages/sklearn/gaussian_process/kernels.py:445: ConvergenceWarning: The optimal value found for dimension 0 of parameter k2__noise_level is close to the specified lower bound 1e-06. Decreasing the bound and calling fit again may find a better value.
+  warnings.warn(
+/root/1d_diffusion_sampler/rom_sandbox/lib/python3.12/site-packages/sklearn/gaussian_process/kernels.py:445: ConvergenceWarning: The optimal value found for dimension 0 of parameter k2__noise_level is close to the specified lower bound 1e-06. Decreasing the bound and calling fit again may find a better value.
+  warnings.warn(
+/root/1d_diffusion_sampler/rom_sandbox/lib/python3.12/site-packages/sklearn/gaussian_process/kernels.py:445: ConvergenceWarning: The optimal value found for dimension 0 of parameter k2__noise_level is close to the specified lower bound 1e-06. Decreasing the bound and calling fit again may find a better value.
+  warnings.warn(
+/root/1d_diffusion_sampler/rom_sandbox/lib/python3.12/site-packages/sklearn/gaussian_process/kernels.py:445: ConvergenceWarning: The optimal value found for dimension 0 of parameter k2__noise_level is close to the specified lower bound 1e-06. Decreasing the bound and calling fit again may find a better value.
+  warnings.warn(
+/root/1d_diffusion_sampler/rom_sandbox/lib/python3.12/site-packages/sklearn/gaussian_process/kernels.py:445: ConvergenceWarning: The optimal value found for dimension 0 of parameter k2__noise_level is close to the specified lower bound 1e-06. Decreasing the bound and calling fit again may find a better value.
+  warnings.warn(
+/root/1d_diffusion_sampler/rom_sandbox/lib/python3.12/site-packages/sklearn/gaussian_process/kernels.py:445: ConvergenceWarning: The optimal value found for dimension 0 of parameter k2__noise_level is close to the specified lower bound 1e-06. Decreasing the bound and calling fit again may find a better value.
+  warnings.warn(
+/root/1d_diffusion_sampler/rom_sandbox/lib/python3.12/site-packages/sklearn/gaussian_process/kernels.py:445: ConvergenceWarning: The optimal value found for dimension 0 of parameter k2__noise_level is close to the specified lower bound 1e-06. Decreasing the bound and calling fit again may find a better value.
+  warnings.warn(
+/root/1d_diffusion_sampler/rom_sandbox/lib/python3.12/site-packages/sklearn/gaussian_process/kernels.py:445: ConvergenceWarning: The optimal value found for dimension 0 of parameter k2__noise_level is close to the specified lower bound 1e-06. Decreasing the bound and calling fit again may find a better value.
+  warnings.warn(
+/root/1d_diffusion_sampler/rom_sandbox/lib/python3.12/site-packages/sklearn/gaussian_process/kernels.py:445: ConvergenceWarning: The optimal value found for dimension 0 of parameter k2__noise_level is close to the specified lower bound 1e-06. Decreasing the bound and calling fit again may find a better value.
+  warnings.warn(
+/root/1d_diffusion_sampler/rom_sandbox/lib/python3.12/site-packages/sklearn/gaussian_process/kernels.py:445: ConvergenceWarning: The optimal value found for dimension 0 of parameter k2__noise_level is close to the specified lower bound 1e-06. Decreasing the bound and calling fit again may find a better value.
+  warnings.warn(
+/root/1d_diffusion_sampler/rom_sandbox/lib/python3.12/site-packages/sklearn/gaussian_process/kernels.py:445: ConvergenceWarning: The optimal value found for dimension 0 of parameter k2__noise_level is close to the specified lower bound 1e-06. Decreasing the bound and calling fit again may find a better value.
+  warnings.warn(
+/root/1d_diffusion_sampler/rom_sandbox/lib/python3.12/site-packages/sklearn/gaussian_process/kernels.py:445: ConvergenceWarning: The optimal value found for dimension 0 of parameter k2__noise_level is close to the specified lower bound 1e-06. Decreasing the bound and calling fit again may find a better value.
+  warnings.warn(
+/root/1d_diffusion_sampler/rom_sandbox/lib/python3.12/site-packages/sklearn/gaussian_process/kernels.py:445: ConvergenceWarning: The optimal value found for dimension 0 of parameter k2__noise_level is close to the specified lower bound 1e-06. Decreasing the bound and calling fit again may find a better value.
+  warnings.warn(
+/root/1d_diffusion_sampler/rom_sandbox/lib/python3.12/site-packages/sklearn/gaussian_process/kernels.py:445: ConvergenceWarning: The optimal value found for dimension 0 of parameter k2__noise_level is close to the specified lower bound 1e-06. Decreasing the bound and calling fit again may find a better value.
+  warnings.warn(
+/root/1d_diffusion_sampler/rom_sandbox/lib/python3.12/site-packages/sklearn/gaussian_process/kernels.py:445: ConvergenceWarning: The optimal value found for dimension 0 of parameter k2__noise_level is close to the specified lower bound 1e-06. Decreasing the bound and calling fit again may find a better value.
+  warnings.warn(
+/root/1d_diffusion_sampler/rom_sandbox/lib/python3.12/site-packages/sklearn/gaussian_process/kernels.py:445: ConvergenceWarning: The optimal value found for dimension 0 of parameter k2__noise_level is close to the specified lower bound 1e-06. Decreasing the bound and calling fit again may find a better value.
+  warnings.warn(
+/root/1d_diffusion_sampler/rom_sandbox/lib/python3.12/site-packages/sklearn/gaussian_process/kernels.py:445: ConvergenceWarning: The optimal value found for dimension 0 of parameter k2__noise_level is close to the specified lower bound 1e-06. Decreasing the bound and calling fit again may find a better value.
+  warnings.warn(
+/root/1d_diffusion_sampler/rom_sandbox/lib/python3.12/site-packages/sklearn/gaussian_process/kernels.py:445: ConvergenceWarning: The optimal value found for dimension 0 of parameter k2__noise_level is close to the specified lower bound 1e-06. Decreasing the bound and calling fit again may find a better value.
+  warnings.warn(
+/root/1d_diffusion_sampler/rom_sandbox/lib/python3.12/site-packages/sklearn/gaussian_process/kernels.py:445: ConvergenceWarning: The optimal value found for dimension 0 of parameter k2__noise_level is close to the specified lower bound 1e-06. Decreasing the bound and calling fit again may find a better value.
+  warnings.warn(
+/root/1d_diffusion_sampler/rom_sandbox/lib/python3.12/site-packages/sklearn/gaussian_process/kernels.py:445: ConvergenceWarning: The optimal value found for dimension 0 of parameter k2__noise_level is close to the specified lower bound 1e-06. Decreasing the bound and calling fit again may find a better value.
+  warnings.warn(
+/root/1d_diffusion_sampler/1d-diffusion-sampler/sklearn_implementation/ge_gpr.py:751: RuntimeWarning: More than 20 figures have been opened. Figures created through the pyplot interface (`matplotlib.pyplot.figure`) are retained until explicitly closed and may consume too much memory. (To control this warning, see the rcParam `figure.max_open_warning`). Consider using `matplotlib.pyplot.close()`.
+  fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+/root/1d_diffusion_sampler/1d-diffusion-sampler/sklearn_implementation/ge_gpr.py:792: RuntimeWarning: More than 20 figures have been opened. Figures created through the pyplot interface (`matplotlib.pyplot.figure`) are retained until explicitly closed and may consume too much memory. (To control this warning, see the rcParam `figure.max_open_warning`). Consider using `matplotlib.pyplot.close()`.
+  fig, axes = plt.subplots(2, n_show, figsize=(4.5 * n_show, 8), squeeze=False)
+/root/1d_diffusion_sampler/1d-diffusion-sampler/sklearn_implementation/ge_gpr.py:830: RuntimeWarning: More than 20 figures have been opened. Figures created through the pyplot interface (`matplotlib.pyplot.figure`) are retained until explicitly closed and may consume too much memory. (To control this warning, see the rcParam `figure.max_open_warning`). Consider using `matplotlib.pyplot.close()`.
+  fig, axes = plt.subplots(1, n_plot, figsize=(4.5 * n_plot, 4.2), sharey=False)
+/root/1d_diffusion_sampler/1d-diffusion-sampler/sklearn_implementation/ge_gpr.py:870: RuntimeWarning: More than 20 figures have been opened. Figures created through the pyplot interface (`matplotlib.pyplot.figure`) are retained until explicitly closed and may consume too much memory. (To control this warning, see the rcParam `figure.max_open_warning`). Consider using `matplotlib.pyplot.close()`.
+  fig, ax = plt.subplots(figsize=(8, 5))
+/root/1d_diffusion_sampler/1d-diffusion-sampler/void_teflon_geometry/ge_gpr_geometry.py:417: RuntimeWarning: More than 20 figures have been opened. Figures created through the pyplot interface (`matplotlib.pyplot.figure`) are retained until explicitly closed and may consume too much memory. (To control this warning, see the rcParam `figure.max_open_warning`). Consider using `matplotlib.pyplot.close()`.
+  fig, axes = plt.subplots(1, 2, figsize=(12, 5), sharex=True, sharey=True)
+/root/1d_diffusion_sampler/1d-diffusion-sampler/void_teflon_geometry/svd_analysis_geometry.py:142: RuntimeWarning: More than 20 figures have been opened. Figures created through the pyplot interface (`matplotlib.pyplot.figure`) are retained until explicitly closed and may consume too much memory. (To control this warning, see the rcParam `figure.max_open_warning`). Consider using `matplotlib.pyplot.close()`.
+  fig, ax = plt.subplots(figsize=(9, 5))
+/root/1d_diffusion_sampler/rom_sandbox/lib/python3.12/site-packages/sklearn/gaussian_process/kernels.py:445: ConvergenceWarning: The optimal value found for dimension 0 of parameter k2__noise_level is close to the specified lower bound 1e-06. Decreasing the bound and calling fit again may find a better value.
+  warnings.warn(
+/root/1d_diffusion_sampler/rom_sandbox/lib/python3.12/site-packages/sklearn/gaussian_process/kernels.py:445: ConvergenceWarning: The optimal value found for dimension 0 of parameter k2__noise_level is close to the specified lower bound 1e-06. Decreasing the bound and calling fit again may find a better value.
+  warnings.warn(
+/root/1d_diffusion_sampler/rom_sandbox/lib/python3.12/site-packages/sklearn/gaussian_process/kernels.py:445: ConvergenceWarning: The optimal value found for dimension 0 of parameter k2__noise_level is close to the specified lower bound 1e-06. Decreasing the bound and calling fit again may find a better value.
+  warnings.warn(
+/root/1d_diffusion_sampler/rom_sandbox/lib/python3.12/site-packages/sklearn/gaussian_process/_gpr.py:667: ConvergenceWarning: lbfgs failed to converge after 15 iteration(s) (status=2):
+ABNORMAL: 
+
+You might also want to scale the data as shown in:
+    https://scikit-learn.org/stable/modules/preprocessing.html
+  _check_optimize_result("lbfgs", opt_res)
+/root/1d_diffusion_sampler/rom_sandbox/lib/python3.12/site-packages/sklearn/gaussian_process/kernels.py:445: ConvergenceWarning: The optimal value found for dimension 0 of parameter k2__noise_level is close to the specified lower bound 1e-06. Decreasing the bound and calling fit again may find a better value.
+  warnings.warn(
+/root/1d_diffusion_sampler/rom_sandbox/lib/python3.12/site-packages/sklearn/gaussian_process/_gpr.py:667: ConvergenceWarning: lbfgs failed to converge after 17 iteration(s) (status=2):
+ABNORMAL: 
+
+You might also want to scale the data as shown in:
+    https://scikit-learn.org/stable/modules/preprocessing.html
+  _check_optimize_result("lbfgs", opt_res)
+/root/1d_diffusion_sampler/rom_sandbox/lib/python3.12/site-packages/sklearn/gaussian_process/kernels.py:445: ConvergenceWarning: The optimal value found for dimension 0 of parameter k2__noise_level is close to the specified lower bound 1e-06. Decreasing the bound and calling fit again may find a better value.
+  warnings.warn(
+/root/1d_diffusion_sampler/rom_sandbox/lib/python3.12/site-packages/sklearn/gaussian_process/kernels.py:445: ConvergenceWarning: The optimal value found for dimension 0 of parameter k2__noise_level is close to the specified lower bound 1e-06. Decreasing the bound and calling fit again may find a better value.
+  warnings.warn(
+/root/1d_diffusion_sampler/rom_sandbox/lib/python3.12/site-packages/sklearn/gaussian_process/kernels.py:445: ConvergenceWarning: The optimal value found for dimension 0 of parameter k2__noise_level is close to the specified lower bound 1e-06. Decreasing the bound and calling fit again may find a better value.
+  warnings.warn(
+  eps_y  Std GPR     :  median=2.56e-03  max=6.00e-03
+  eps_proj (POD lb)  :  median=2.56e-03  max=6.00e-03
+============================================================
+
+Step 6: Learning curve  (sizes: [10, 20, 30, 50, 75, 100])
+  M=  10:  GE-GPR eps_y=2.81e-03   Std-GPR eps_y=2.81e-03
+  M=  20:  GE-GPR eps_y=2.56e-03   Std-GPR eps_y=2.58e-03
+  M=  30:  GE-GPR eps_y=2.56e-03   Std-GPR eps_y=2.56e-03
+  M=  50:  GE-GPR eps_y=2.56e-03   Std-GPR eps_y=2.56e-03
+  M=  75:  GE-GPR eps_y=2.56e-03   Std-GPR eps_y=2.56e-03
+  M= 100:  GE-GPR eps_y=2.56e-03   Std-GPR eps_y=2.56e-03
+
+Step 7: Generating plots
+  Saved: /root/1d_diffusion_sampler/1d-diffusion-sampler/gpr_vs_gegpr_comparison/void_thickness/gegpr_error_comparison.png
+  Saved: /root/1d_diffusion_sampler/1d-diffusion-sampler/gpr_vs_gegpr_comparison/void_thickness/gegpr_parity.png
+  Saved: /root/1d_diffusion_sampler/1d-diffusion-sampler/gpr_vs_gegpr_comparison/void_thickness/gegpr_flux_reconstruction.png
+  Saved: /root/1d_diffusion_sampler/1d-diffusion-sampler/gpr_vs_gegpr_comparison/void_thickness/gegpr_learning_curve.png
+  Saved: /root/1d_diffusion_sampler/1d-diffusion-sampler/gpr_vs_gegpr_comparison/void_thickness/gegpr_error_map_ab.png
+
+GE-GPR (geometry) comparison complete.  All plots saved to /root/1d_diffusion_sampler/1d-diffusion-sampler/gpr_vs_gegpr_comparison/void_thickness/
+
+######################################################################
+# Parameter: steepness  (geometry)
+######################################################################
+============================================================
+GE-GPR vs Std-GPR — void_teflon geometry  (a=steepness, b=interface center)
+============================================================
+
+Step 0: Running SVD/POD stage (energy_threshold=0.99999)
+============================================================
+Geometry-parameterized ROM — SVD / POD analysis
+============================================================
+  Geometry: L=1.0, core_radius=0.16921, shield_thickness=0.07801, shell_width=0.25278
+  void_thickness bounds: (0.125, 0.125)   steepness bounds: (100.0, 400.0)
+  Active parameter(s): ['steepness']
+QoI interval  : [0.1692, 0.4220] cm  (Ny=885 of 3500 cells)
+  Solving 300 training snapshots
+  Solving 60 test snapshots
+Y_tr : (885, 300),  Y_te : (885, 60)
+Saved: samples_train.txt  (300 x 2),  qoi_values_train.txt  (300 x 885)
+Saved: samples_test.txt  (60 x 2),  qoi_values_test.txt  (60 x 885)
+Saved: /root/1d_diffusion_sampler/1d-diffusion-sampler/gpr_vs_gegpr_comparison/steepness/qoi_snapshots.png
+
+Computing thin SVD of Y_tr  (training snapshots only)
+Singular values (first 10): [4.25594e+01 4.06000e-02 5.90000e-03 7.00000e-04 2.00000e-04 0.00000e+00
+ 0.00000e+00 0.00000e+00 0.00000e+00 0.00000e+00]
+
+Modes for 99.9  % energy : 1
+Modes for 99.99 % energy : 1
+Using r = 1  (eta = 0.99999)
+Coefficient matrix A_alpha: (1, 300)  (R x M_train)
+Saved: /root/1d_diffusion_sampler/1d-diffusion-sampler/gpr_vs_gegpr_comparison/steepness/pod_basis.txt            (885 x 1)
+Saved: /root/1d_diffusion_sampler/1d-diffusion-sampler/gpr_vs_gegpr_comparison/steepness/coefficients_train.txt   (300 x 1)
+Saved: /root/1d_diffusion_sampler/1d-diffusion-sampler/gpr_vs_gegpr_comparison/steepness/svd_spectrum.png
+Saved: /root/1d_diffusion_sampler/1d-diffusion-sampler/gpr_vs_gegpr_comparison/steepness/svd_modes.png
+Saved: /root/1d_diffusion_sampler/1d-diffusion-sampler/gpr_vs_gegpr_comparison/steepness/svd_reconstruction.png
+Saved: /root/1d_diffusion_sampler/1d-diffusion-sampler/gpr_vs_gegpr_comparison/steepness/svd_proj_error.png
+
+=== SVD summary (geometry parameter) ===
+  QoI interval          : [0.1692, 0.4220] cm
+  QoI dimension Ny      : 885
+  Train snapshots M_tr  : 300
+  Test  snapshots M_te  : 60
+  Snapshot matrix Y_tr  : (885, 300)
+  Coefficient matrix    : (1, 300)  (R x M_train)
+  sigma_1               : 42.5594
+  sigma_1 / sigma_2     : 1048.513
+  Energy in mode 1      : 99.9999 %
+  Modes for eta = 99.9  % : 1
+  Modes for eta = 99.99 % : 1
+  Chosen rank R         : 1
+  ||Y_tr-Y_R||_F/||Y_tr||_F : 9.64e-04
+
+  Test eps_proj (r=1) -- median : 8.32e-04,  max : 2.35e-03
+
+Step 1: Loading SVD/POD artifacts
+  POD basis  Psi : 885 x 1
+  Train samples  : 300  (using 100 for GE-GPR)
+  Test samples   : 60,  p = 2,  active = ['steepness']
+
+Step 2: Normalising inputs and standardising outputs
+
+Step 3: Computing adjoint gradients d(alpha_k)/da, d(alpha_k)/db for 100 training samples (1 mode each) ...
+  Done in 1.8s
+
+Step 4: Fitting GE-GPR and standard GPR (m_ge=100, R=1, p_act=1, restarts=3)
+
+  Mode 1/1
+    GE-GPR  log-MLL = 1064.217   (10.6s)
+    Std-GPR log-MLL =  523.090   (0.3s)
+
+Step 5: Predicting on test set
+
+============================================================
+Test reconstruction errors  (m_ge=100, M_te=60, R=1)
+  eps_y  GE-GPR      :  median=8.32e-04  max=2.35e-03
+  eps_y  Std GPR     :  median=8.32e-04  max=2.35e-03
+  eps_proj (POD lb)  :  median=8.32e-04  max=2.35e-03
+============================================================
+
+Step 6: Learning curve  (sizes: [10, 20, 30, 50, 75, 100])
+  M=  10:  GE-GPR eps_y=8.32e-04   Std-GPR eps_y=8.33e-04
+  M=  20:  GE-GPR eps_y=8.32e-04   Std-GPR eps_y=8.32e-04
+  M=  30:  GE-GPR eps_y=8.32e-04   Std-GPR eps_y=8.32e-04
+  M=  50:  GE-GPR eps_y=8.32e-04   Std-GPR eps_y=8.32e-04
+  M=  75:  GE-GPR eps_y=8.32e-04   Std-GPR eps_y=8.32e-04
+  M= 100:  GE-GPR eps_y=8.32e-04   Std-GPR eps_y=8.32e-04
+
+Step 7: Generating plots
+  Saved: /root/1d_diffusion_sampler/1d-diffusion-sampler/gpr_vs_gegpr_comparison/steepness/gegpr_error_comparison.png
+  Saved: /root/1d_diffusion_sampler/1d-diffusion-sampler/gpr_vs_gegpr_comparison/steepness/gegpr_parity.png
+  Saved: /root/1d_diffusion_sampler/1d-diffusion-sampler/gpr_vs_gegpr_comparison/steepness/gegpr_flux_reconstruction.png
+  Saved: /root/1d_diffusion_sampler/1d-diffusion-sampler/gpr_vs_gegpr_comparison/steepness/gegpr_learning_curve.png
+  Saved: /root/1d_diffusion_sampler/1d-diffusion-sampler/gpr_vs_gegpr_comparison/steepness/gegpr_error_map_ab.png
+
+GE-GPR (geometry) comparison complete.  All plots saved to /root/1d_diffusion_sampler/1d-diffusion-sampler/gpr_vs_gegpr_comparison/steepness/
+
+==============================================================================
+Param          domain        median std     median GE   improve %
+==============================================================================
+D              material      5.4096e-03    5.4096e-03        0.0%
+Sigma_a        material      1.8270e-02    1.8269e-02        0.0%
+q              material      3.2573e-05    1.2506e-06       96.2%
+void_thickness geometry      2.5574e-03    2.5573e-03        0.0%
+steepness      geometry      8.3210e-04    8.3210e-04        0.0%
+==============================================================================
+Saved: /root/1d_diffusion_sampler/1d-diffusion-sampler/gpr_vs_gegpr_comparison/summary_table.csv
+Saved: /root/1d_diffusion_sampler/1d-diffusion-sampler/gpr_vs_gegpr_comparison/summary_median_error_bars.png
+Saved: /root/1d_diffusion_sampler/1d-diffusion-sampler/gpr_vs_gegpr_comparison/summary_learning_curves.png
+
+======================================================================
+  Comparison complete. Per-parameter plots in /root/1d_diffusion_sampler/1d-diffusion-sampler/gpr_vs_gegpr_comparison/<param>/, summary in /root/1d_diffusion_sampler/1d-diffusion-sampler/gpr_vs_gegpr_comparison/summary_table.csv and /root/1d_diffusion_sampler/1d-diffusion-sampler/gpr_vs_gegpr_comparison/summary_*.png
+======================================================================
+

@@ -191,13 +191,11 @@ def main(
 
     sampler = GeometryParamSampler(void_bounds, steepness_bounds)
     active_idx = np.where(~sampler._fixed_mask)[0]
-    if len(active_idx) < 2:
+    if len(active_idx) < 1:
         raise ValueError(
-            "Both void_thickness (b) and steepness (a) must be active "
-            "(non-degenerate bounds) to compare surrogates over (a, b) -- "
-            f"got active parameters: {sampler.active_names}. Re-run "
-            "svd_analysis_geometry.main() with a real steepness_bounds range, "
-            "e.g. steepness_bounds=(100.0, 400.0)."
+            "At least one of void_thickness (b) or steepness (a) must be "
+            "active (non-degenerate bounds) to compare surrogates -- both "
+            f"are fixed. Active parameters: {sampler.active_names}."
         )
     p_act = len(active_idx)
     m_ge  = min(m_ge, M_tr)
