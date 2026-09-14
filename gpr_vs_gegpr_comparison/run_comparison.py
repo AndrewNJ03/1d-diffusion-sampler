@@ -80,11 +80,28 @@ _MAT_GE_SHARED = dict(
 # Fixed values reused from run_pipeline.py's existing "Material 1" convention.
 _D_FIX, _SA_FIX, _Q_FIX = 1.0, 0.5, 1.0
 
+# Geometry studies rescaled x10 (L, core_radius, shield_thickness, shell_width)
+# so the void/Teflon slab spans the same L=10 domain as the material studies,
+# and the QoI window is forced to the identical [3, 7] used there instead of
+# the geometry pipeline's own shell-only default -- so this window now also
+# covers part of the fixed Core region, unlike that default. void_thickness
+# bounds scale x10 (length units) to stay proportional to the new shell_width;
+# steepness scales /10 (1/length units, sigmoid_switch's `a*(x-b)`) to keep
+# the same physical transition width in cm.
+_GEO_SCALE = 10.0
+_GEO_L = 10.0
+_GEO_CORE_RADIUS = 0.16921 * _GEO_SCALE
+_GEO_SHIELD_THICKNESS = 0.07801 * _GEO_SCALE
+_GEO_SHELL_WIDTH = 0.25278 * _GEO_SCALE
+_GEO_QOI_XMIN, _GEO_QOI_XMAX = 3.0, 7.0  # same window as the material studies
+_VOID_FIX = 0.125 * _GEO_SCALE  # midpoint of the (scaled) void_bounds range
+
 _GEO_GE_SHARED = dict(
+    L=_GEO_L, core_radius=_GEO_CORE_RADIUS, shield_thickness=_GEO_SHIELD_THICKNESS,
+    shell_width=_GEO_SHELL_WIDTH, qoi_xmin=_GEO_QOI_XMIN, qoi_xmax=_GEO_QOI_XMAX,
     m_ge=250, n_restarts=3, learning_curve_sizes=[10, 20, 30, 50, 75, 100, 150, 200, 250],
     run_svd_stage=True,
 )
-_VOID_FIX = 0.125  # midpoint of the default void_bounds=(0.001, 0.25) range
 
 STUDIES = [
     dict(
@@ -111,13 +128,17 @@ STUDIES = [
     dict(
         name="void_thickness", domain="geometry", label="void_thickness",
         svd_kwargs=None,
-        ge_kwargs=dict(_GEO_GE_SHARED, void_bounds=(0.001, 0.25), steepness_bounds=(200.0, 200.0),
+        ge_kwargs=dict(_GEO_GE_SHARED,
+                        void_bounds=(0.001 * _GEO_SCALE, 0.25 * _GEO_SCALE),
+                        steepness_bounds=(200.0 / _GEO_SCALE, 200.0 / _GEO_SCALE),
                         output_dir=os.path.join(_HERE, "void_thickness")),
     ),
     dict(
         name="steepness", domain="geometry", label=r"steepness",
         svd_kwargs=None,
-        ge_kwargs=dict(_GEO_GE_SHARED, void_bounds=(_VOID_FIX, _VOID_FIX), steepness_bounds=(100.0, 400.0),
+        ge_kwargs=dict(_GEO_GE_SHARED,
+                        void_bounds=(_VOID_FIX, _VOID_FIX),
+                        steepness_bounds=(100.0 / _GEO_SCALE, 400.0 / _GEO_SCALE),
                         output_dir=os.path.join(_HERE, "steepness")),
     ),
 ]
