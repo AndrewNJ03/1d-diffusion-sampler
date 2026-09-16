@@ -1,0 +1,64 @@
+============================================================
+GE-GPR vs Std-GPR — void_teflon geometry  (a=steepness, b=interface center)
+============================================================
+
+Step 0: Running SVD/POD stage (energy_threshold=0.9999)
+============================================================
+Geometry-parameterized ROM — SVD / POD analysis
+============================================================
+  Geometry: L=10.0, core_radius=1.6921, shield_thickness=0.7801, shell_width=2.5278
+  void_thickness bounds: (0.01, 2.5)   steepness bounds: (10.0, 40.0)
+  Active parameter(s): ['void_thickness', 'steepness']
+QoI interval  : [3.0000, 7.0000] cm  (Ny=1200 of 3000 cells)
+  Solving 300 training snapshots
+  Solving 60 test snapshots
+Y_tr : (1200, 300),  Y_te : (1200, 60)
+Saved: samples_train.txt  (300 x 2),  qoi_values_train.txt  (300 x 1200)
+Saved: samples_test.txt  (60 x 2),  qoi_values_test.txt  (60 x 1200)
+Saved: /root/1d_diffusion_sampler/1d-diffusion-sampler/gpr_vs_gegpr_comparison/geometry_2param/qoi_snapshots.png
+
+Computing thin SVD of Y_tr  (training snapshots only)
+Singular values (first 10): [8.416344e+02 9.209500e+00 1.463000e+00 2.541000e-01 5.630000e-02
+ 1.770000e-02 6.400000e-03 2.400000e-03 7.000000e-04 3.000000e-04]
+
+Modes for 99.9  % energy : 1
+Modes for 99.99 % energy : 2
+Using r = 2  (eta = 0.9999)
+Coefficient matrix A_alpha: (2, 300)  (R x M_train)
+Saved: /root/1d_diffusion_sampler/1d-diffusion-sampler/gpr_vs_gegpr_comparison/geometry_2param/pod_basis.txt            (1200 x 2)
+Saved: /root/1d_diffusion_sampler/1d-diffusion-sampler/gpr_vs_gegpr_comparison/geometry_2param/coefficients_train.txt   (300 x 2)
+Saved: /root/1d_diffusion_sampler/1d-diffusion-sampler/gpr_vs_gegpr_comparison/geometry_2param/svd_spectrum.png
+Saved: /root/1d_diffusion_sampler/1d-diffusion-sampler/gpr_vs_gegpr_comparison/geometry_2param/svd_modes.png
+Saved: /root/1d_diffusion_sampler/1d-diffusion-sampler/gpr_vs_gegpr_comparison/geometry_2param/svd_reconstruction.png
+Saved: /root/1d_diffusion_sampler/1d-diffusion-sampler/gpr_vs_gegpr_comparison/geometry_2param/svd_proj_error.png
+
+=== SVD summary (geometry parameter) ===
+  QoI interval          : [3.0000, 7.0000] cm
+  QoI dimension Ny      : 1200
+  Train snapshots M_tr  : 300
+  Test  snapshots M_te  : 60
+  Snapshot matrix Y_tr  : (1200, 300)
+  Coefficient matrix    : (2, 300)  (R x M_train)
+  sigma_1               : 841.6344
+  sigma_1 / sigma_2     : 91.388
+  Energy in mode 1      : 99.9877 %
+  Modes for eta = 99.9  % : 1
+  Modes for eta = 99.99 % : 2
+  Chosen rank R         : 2
+  ||Y_tr-Y_R||_F/||Y_tr||_F : 1.77e-03
+
+  Test eps_proj (r=2) -- median : 9.42e-04,  max : 9.02e-03
+
+Step 1: Loading SVD/POD artifacts
+  POD basis  Psi : 1200 x 2
+  Train samples  : 300  (using 250 for GE-GPR)
+  Test samples   : 60,  p = 2,  active = ['void_thickness', 'steepness']
+
+Step 2: Normalising inputs and standardising outputs
+
+Step 3: Computing adjoint gradients d(alpha_k)/da, d(alpha_k)/db for 250 training samples (2 modes each) ...
+  Done in 3.8s
+
+Step 4: Fitting GE-GPR and standard GPR (m_ge=250, R=2, p_act=2, restarts=3)
+
+  Mode 1/2

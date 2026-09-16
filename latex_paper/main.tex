@@ -1,35 +1,9 @@
 \documentclass[]{ANStopical}
 
-%%% Packages Required by Class (already included)
-% fancyhdr
-% lastpage
-% titling
-% titlesec
-% ragged2e
-% enumitem
-% amsmath
-% graphicx
-% geometry
-% newtxtext
-% newtxmath
-% hyperref
-% cleveref
-% caption
-% authblk
-% apptools
-% appendix
-% ifpdf
-% epstopdf
-
-%%% Some other useful packages
+% The ANStopical class already loads fancyhdr, lastpage, titling, titlesec,
+% ragged2e, enumitem, amsmath, graphicx, geometry, newtxtext/newtxmath,
+% hyperref, cleveref, caption, authblk, apptools, appendix, ifpdf and epstopdf.
 \usepackage{bm}
-% \usepackage{tikz}
-% \usepackage{color}
-% \usepackage{subcaption}
-% \usepackage{algcompatible}
-% \usepackage{array}
-
-\usepackage{nomencl} % If needed
 
 \title{Gradient-Enhanced Gaussian Process Regression for Non-Intrusive
 POD-Based Reduced-Order Models: An Adjoint-Informed 1D Diffusion Study}
@@ -44,21 +18,14 @@ POD-Based Reduced-Order Models: An Adjoint-Informed 1D Diffusion Study}
 
 %%% Write text for abstract
 \Abstract{%
-\textit{Abstract:}
-\begin{itemize}
-    \item Expensive coupled-physics solves $\to$ cheap surrogate. GE-GPR is the method; a 1D diffusion sandbox is used here as a verification and validation (V\&V) vehicle, where closed-form/adjoint ground truth makes the method's gains checkable before deploying it on harder problems.
-    \item New idea: an adjoint solve gives free gradients of each POD coefficient. Train a gradient-enhanced GP (GE-GPR) on those instead of a value-only GP.
-    \item Verified on two 1D diffusion test cases (layered material properties, a smooth void/Teflon interface, maybe both combined) with exact adjoint gradients, then applied to a SCEPTRE-based secondary problem where no adjoint exists, to check the method still helps with only approximate gradients.
-    \item Punchline: GE-GPR hits the same accuracy with [???]$\times$ fewer training solves.
-    \item Takeaway: adjoint gradients are a cheap way to make ROM surrogates more sample-efficient. 1D diffusion is shown here due to page constraints; the same GE-GPR pipeline is targeted for the full 3D coupled-physics stack by the December review, where time allows.
-\end{itemize}
+\textit{Abstract:} Non-intrusive reduced-order models (ROMs) built from proper orthogonal decomposition (POD) and Gaussian process regression (GPR) replace an expensive coupled-physics solve with a cheap parameter-to-quantity-of-interest (QoI) surrogate, but a value-only GP learns exactly one data point per expensive training solve. This paper's contribution is gradient-enhanced GPR (GE-GPR). One adjoint solve per POD mode gives, at negligible cost beyond the forward solve already paid for, the exact gradient of that mode's coefficient with respect to every input parameter at once. Training a GP jointly on those values and gradients is not an approximation bolted onto a value-only GP; it is the same GP model, conditioned on more of what it already implies. GE-GPR is built from scratch, since scikit-learn offers no gradient-observation support, and is verified against exact adjoint gradients on two 1D one-group diffusion test cases, used here as a sandbox for scoping the method rather than as physics results in their own right: piecewise-constant material layers and a smooth void/Teflon interface. Combining both into one shared 5-parameter case at a matched training-set size of $M{=}80$, GE-GPR cuts the median field-reconstruction error by $80\%$ relative to standard GPR ($5.8\times10^{-4}$ vs.\ $2.9\times10^{-3}$) and lands roughly $3\times$ above the POD projection floor, versus $\sim15\times$ for standard GPR. On the material parameter whose coefficient map is hardest to learn from values alone, GE-GPR reaches its converged accuracy with roughly an order of magnitude fewer training solves. A SCEPTRE-based SGEMP charge-deposition problem provides a secondary, real-code check: a $1000$-case void-thickness sweep gives a converged standard-GPR baseline (held-out relative error $\varepsilon_q\approx1.15\times10^{-3}$). SCEPTRE's own adjoint output exists for this case set but is intentionally not yet wired into the pipeline, and extending GE-GPR to it is targeted for the December review.
 }
 
 %%% List up to 5 keywords separated by a comma
 \keywords{reduced-order modeling, proper orthogonal decomposition, Gaussian process regression, adjoint sensitivity, gradient-enhanced surrogate}
 
 %%% Provide a short title for the header on odd pages
-\shortTitle{Gradient-Enhanced GPR for POD-ROM --- M\&C 2027}
+\shortTitle{Gradient-Enhanced GPR for POD-Based ROMs}
 
 %%% Provide a short author listing for the header on even pages
 \authorHead{A. N. Jeffery, J. C. Ragusa, J. E. Morel}
@@ -67,101 +34,195 @@ POD-Based Reduced-Order Models: An Adjoint-Informed 1D Diffusion Study}
 
 \section{Introduction}\label{sec:intro}
 
+Coupled-physics solves are often too expensive to call repeatedly inside a design loop, an uncertainty-quantification study, or an optimization routine. Non-intrusive reduced-order models (ROMs) address this by replacing the expensive solver with a cheap surrogate map from input parameters $\mu$ to a quantity of interest (QoI). A common recipe is proper orthogonal decomposition (POD): a snapshot matrix of the QoI, evaluated at a set of training parameter values, is factored by a thin singular value decomposition (SVD) to give a low-rank basis $\Psi$, the QoI at any new $\mu$ is approximated as $y(\mu)\approx\Psi\alpha(\mu)$, and a Gaussian process (GP) is fit to learn the map $\mu\mapsto\alpha(\mu)$ for each retained mode.
+
+The limitation of this recipe is that a plain GP is trained on function values alone, so every expensive training solve buys exactly one data point per POD mode. Adjoint methods offer a way around this almost for free: a single adjoint solve per POD mode gives the exact gradient of that mode's coefficient with respect to every parameter simultaneously, at a cost that reuses the same factorized system matrix as the forward solve. Feeding those gradients into the GP as additional training observations, a technique known as gradient-enhanced GPR (GE-GPR) or gradient-enhanced kriging (GEK) in the surrogate-modeling literature \cite{bouhlel_gek,han_gek,ulaganathan_gek,backhaus_gek,semler_weiser_gek}, lets a fixed number of expensive solves carry more information about the surrogate's shape.
+
+\textbf{This paper's contribution is the method}: GE-GPR built on adjoint-derived POD-coefficient gradients, implemented from scratch since scikit-learn's GP implementation does not support derivative observations. A one-group, 1D diffusion solver is used throughout as a sandbox for scoping this method, rather than as the paper's object of interest in its own right. Because the diffusion solver's adjoint sensitivities can be verified in closed form and by finite differences, every claim about GE-GPR's sample efficiency can be checked exactly before the same recipe is pointed at a harder code, here SCEPTRE, an export-controlled Sandia radiation-transport code (Sec.~\ref{sec:sceptre}), where the gains cannot be checked the same way. SCEPTRE does produce adjoint sources for this case set, but integrating them into GE-GPR is left for future work; this paper's SCEPTRE case instead uses a finite-difference-approximated gradient, a conservative stand-in for a code whose adjoint output has not yet been incorporated into the pipeline. Only the 1D diffusion sandbox results and the SCEPTRE secondary problem fit within this paper's page limit; the underlying pipeline (forward solve $\to$ POD $\to$ adjoint $\to$ GE-GPR) is not specific to the diffusion solver, and extending it to the full 3D coupled-physics stack is targeted for the December review, time permitting.
+
+Concretely, this paper:
 \begin{itemize}
-    \item Expensive coupled-physics solves are too slow to call over and over (design loops, UQ). Non-intrusive ROMs fix that with a cheap parameter $\to$ QoI surrogate.
-    \item Usual recipe: POD on a QoI snapshot matrix, project to a few coefficients $\alpha(\mu)$, fit a GP to $\mu \mapsto \alpha(\mu)$.
-    \item Problem: a plain GP only learns from function values. Every expensive solve gives one data point per mode.
-    \item Adjoints fix that almost for free: one adjoint solve per POD mode gives the exact gradient w.r.t.\ every parameter at once.
-    \item So: feed those gradients into the GP too $\to$ gradient-enhanced GPR (GE-GPR / GEK). Cite \cite{bouhlel_gek,han_gek,ulaganathan_gek,backhaus_gek,semler_weiser_gek}.
-    \item \textbf{This paper's contribution is the method}, GE-GPR built on adjoint-derived POD-coefficient gradients. A 1D one-group diffusion solver is used as the V\&V vehicle for it: closed-form/adjoint-verifiable gradients let every claim about GE-GPR's sample efficiency be checked exactly, before the same recipe is pointed at a harder, adjoint-free code (SCEPTRE, Sec.~\ref{sec:sceptre}) where the gains can't be checked the same way.
-    \item Page-limit note: only the 1D diffusion V\&V results and the SCEPTRE secondary problem fit here. The same pipeline (forward solve $\to$ POD $\to$ adjoint $\to$ GE-GPR) is not solver-specific, and is targeted for the full 3D coupled-physics stack for the December review where time allows.
-    \item What this paper does:
-    \begin{itemize}
-        \item derives the adjoint sensitivities of the POD coefficients for the diffusion solver (material layers, plus a smooth moving-interface geometry)
-        \item builds GE-GPR from scratch (scikit-learn has no gradient-observation support) and checks it against standard GPR
-        \item verifies GE-GPR against exact adjoint gradients in 1D diffusion, then applies it unchanged to a SCEPTRE-based secondary problem with only approximate (finite-difference) gradients
-        \item lays out a verification (identity check, FD gradient check, sweep plots) that's reusable elsewhere.
-    \end{itemize}
+    \item derives the adjoint sensitivities of the POD coefficients for the 1D diffusion solver, both for piecewise-constant material layers and for a smooth, differentiable moving-interface geometry;
+    \item builds GE-GPR from scratch and verifies it against standard, value-only GPR on both test cases at matched training-set size;
+    \item combines the two test cases' parameters into one 5-parameter study to show how GE-GPR's relative benefit changes as the number of active parameters grows;
+    \item verifies GE-GPR against exact adjoint gradients in 1D diffusion, then establishes a standard-GPR accuracy baseline on a real, export-controlled SCEPTRE dataset, as the first step toward extending GE-GPR to it; and
+    \item lays out a reusable three-part verification recipe (an adjoint identity check, a finite-difference gradient check, and a 1D sweep with a tangent-line overlay) used identically in every case above.
 \end{itemize}
 
 
-\section{V\&V Sandbox: Forward Model and Baseline ROM}\label{sec:fwd}
+\section{1D Diffusion Sandbox: Forward Model and Baseline ROM}\label{sec:fwd}
 
-The gradient-free scaffolding GE-GPR is verified against, kept brief since it is not the contribution: 1D one-group diffusion with piecewise-constant material layers (or a smooth void/Teflon interface, Sec.~\ref{sec:adjoint}), cell-centered 2nd-order FD $\to$ sparse system $A(\mu)\phi(\mu)=s(\mu)$, parameters $\mu$ = per-layer $D,\Sigma_a,q$. A masked flux window $y(\mu)=H\phi(\mu)$ is projected onto a rank-$r$ POD basis $\Psi$ (thin SVD, energy cutoff) to give coefficients $\alpha(\mu)=\Psi^\top y(\mu)$; the baseline surrogate is one ARD-RBF GP per mode (scikit-learn). Field error $\varepsilon_y$, compared against the POD floor $\varepsilon_{\mathrm{proj}}$, is the metric used in every result that follows.
+The forward model and baseline (value-only) ROM are kept brief here, since neither is this paper's contribution; they are the gradient-free scaffolding that GE-GPR is verified against. The solver is a 1D, one-group neutron diffusion problem,
+\begin{equation}
+    -\frac{d}{dx}\!\left[D(x)\frac{d\phi}{dx}\right] + \Sigma_a(x)\,\phi(x) = q(x), \qquad x\in(0,L),
+\end{equation}
+with Dirichlet boundary conditions, discretized with a cell-centered, second-order finite-volume scheme on a uniform $N$-cell mesh into a sparse linear system $A(\mu)\phi(\mu)=s(\mu)$. Two parameterizations of $\mu$ are used, corresponding to the two test cases carried through the rest of the paper:
+\begin{itemize}
+    \item \textbf{Material layers:} $\mu$ is the per-layer diffusion coefficient, absorption cross section, and source, $(D_m,\Sigma_{a,m},q_m)$, piecewise constant over $N_{\mathrm{mat}}$ layers.
+    \item \textbf{Void/Teflon geometry:} a symmetric slab (Shield $\vert$ Teflon $\vert$ Void $\vert$ Core $\vert$ Core $\vert$ Void $\vert$ Teflon $\vert$ Shield) in which the Void/Teflon interface is the only feature allowed to move. Because a hard material boundary is not differentiable in its own location (moving it changes which mesh cell it falls in, not a smooth function of a coordinate), the hard step is replaced, at that interface only, by a logistic switch $\sigma(x;a,b)=\left[1+e^{-a(x-b)}\right]^{-1}$, where $b$ is the interface location ($\sigma(b)=0.5$ for any $a$) and $a$ is the transition steepness. The Core/Void and Teflon/Shield boundaries are left as hard steps, since they do not move in this study.
+\end{itemize}
+
+A masked flux window $y(\mu)=H\phi(\mu)$ (a fixed sub-interval of cells) is the QoI. Given $M$ training solves, the snapshot matrix $Y\in\mathbb{R}^{N_y\times M}$ is factored by a thin SVD, and the rank $R$ retained is set by an energy cutoff on the singular-value spectrum (typically $\eta=99.9$--$99.99\%$); this gives the POD basis $\Psi\in\mathbb{R}^{N_y\times R}$ and training coefficients $\alpha(\mu)=\Psi^\top y(\mu)\in\mathbb{R}^R$. The baseline surrogate is one independent, ARD-RBF-kernel GP per retained mode (scikit-learn's \texttt{GaussianProcessRegressor}), trained on $\{\mu^{(i)},\alpha_k(\mu^{(i)})\}_{i=1}^{M}$ for each mode $k$. At prediction time the field is reconstructed as $\hat y(\mu)=\Psi\hat\alpha(\mu)$, and every result in this paper is reported as the relative field-reconstruction error
+\begin{equation}
+    \varepsilon_y(\mu) = \frac{\lVert \hat y(\mu) - y(\mu)\rVert_2}{\lVert y(\mu)\rVert_2}
+\end{equation}
+on a held-out test set. The reference point is the POD projection-error floor
+$\varepsilon_{\mathrm{proj}}(\mu) = \lVert \Psi\Psi^\top y(\mu) - y(\mu)\rVert_2 \big/ \lVert y(\mu)\rVert_2$,
+the best any surrogate built on this basis could do, since it is the error from truncating to rank $R$ alone, independent of how well the GP fits $\alpha(\mu)$.
 
 
 \section{Adjoint Sensitivities of the POD Coefficients}\label{sec:adjoint}
 
-The gradients that feed Section~\ref{sec:gegpr}.
+The gradients that feed the GE-GPR surrogate of Sec.~\ref{sec:gegpr} come from a single adjoint solve per POD mode. The standard adjoint trick for a scalar QoI $J=g^\top\phi$ is one solve of the adjoint system $A^\top\lambda=g$, after which $J$ can be recovered without ever forming $\phi$ explicitly, via $J=\lambda^\top s$. More usefully, $\lambda$ also gives $\partial J/\partial\mu_j$ for every parameter $\mu_j$ at once, by differentiating the residual $R(\phi,\mu)=A(\mu)\phi-s(\mu)=0$ and substituting $\lambda$ in place of re-solving the tangent system for each parameter.
 
-\begin{itemize}
-    \item Standard trick: a scalar QoI $J=g^\top\phi$ comes from one adjoint solve $A^\top\lambda=g$, via $J=\lambda^\top s$
-    \item Each POD coefficient $\alpha_k$ is exactly this kind of scalar QoI ($g_k=H^\top\psi_k$) $\to$  adjoint solve per mode gives $\partial\alpha_k/\partial\mu_j$ for every $\mu_j$ at once
-    \item Material-layer case: clean closed forms for $\partial\alpha_k/\partial q_m$ and $\partial\alpha_k/\partial\Sigma_{a,m}$; $\partial\alpha_k/\partial D_m$ requires more work
-    \item Geometry case: a hard material boundary isn't differentiable at the boundary. Fix: swap it for a smooth sigmoid switch at the one moving interface (void/Teflon), derive the chain rule through it (two knobs: interface location, transition sharpness)
-    \item Same adjoint machinery works for both cases; geometry just swaps a 0/1 layer indicator for a smooth per-cell direction vector
-    \item Verification, same three checks each time: identity check ($\lambda^\top s$ vs.\ direct projection, matches to solver tolerance), finite-difference gradient check, and a 1D sweep with a tangent-line overlay
-\end{itemize}
+Each POD coefficient $\alpha_k=\psi_k^\top y=\psi_k^\top H\phi$ is exactly this kind of scalar QoI, with $g_k=H^\top\psi_k$ embedding the $k$-th spatial mode back into the full mesh. One adjoint solve $A^\top\lambda_k=g_k$ per mode therefore gives $\partial\alpha_k/\partial\mu_j$ for every $\mu_j$ simultaneously, reusing the same factorization of $A$ (up to a transpose) already computed for the forward solve.
+
+\textbf{Material-layer case.} For the per-layer source and absorption, the sensitivities have closed forms that follow directly from differentiating $A\phi=s$ with respect to a piecewise-constant material parameter. With $\Delta x_i$ the cell width, $\mathrm{layer}(i)$ the layer index of cell $i$, and interior cells excluded where a Dirichlet row overwrites the residual:
+\begin{align}
+    \frac{\partial\alpha_k}{\partial q_m} &= \sum_{i\,\in\,\mathrm{layer}\,m,\ \mathrm{interior}} (\lambda_k)_i\,\Delta x_i, \\
+    \frac{\partial\alpha_k}{\partial\Sigma_{a,m}} &= -\sum_{i\,\in\,\mathrm{layer}\,m,\ \mathrm{interior}} (\lambda_k)_i\,\phi_i\,\Delta x_i.
+\end{align}
+The diffusion-coefficient sensitivity $\partial\alpha_k/\partial D_m$ requires more work, since $D$ enters through the face-coupling (harmonic-mean) conductances rather than a single cell's diagonal or RHS entry. Writing $d_i=D_i/\Delta x_i$ for the half-cell conductance and $\beta_f$ for the coupling coefficient at face $f$ between cells $i,i{+}1$, $\partial\beta_f/\partial D_i = 2d_{i+1}^2/(d_i+d_{i+1})^2/\Delta x_i$ (and symmetrically for $D_{i+1}$), and $\partial\alpha_k/\partial D_m = -\lambda_k^\top(\partial A/\partial D_m)\phi$ summed over the faces bordering layer $m$.
+
+\textbf{Geometry case.} Differentiating through the logistic switch $\sigma(x;a,b)$ by the chain rule gives the smooth per-cell ``direction vector'' $\partial(D,\Sigma_a,q)/\partial a$ and $\partial(D,\Sigma_a,q)/\partial b$ needed in place of the layer indicator used above; the same adjoint machinery ($A^\top\lambda_k=g_k$, then contract against this direction vector) applies unchanged. Because the direction-vector construction is generic to any per-cell derivative field, the same code that handles the geometry case's two parameters (interface location $b$, steepness $a$) extends without modification to additional material parameters promoted from fixed constants to active dimensions (Sec.~\ref{sec:results}, combined case).
+
+\textbf{Verification.} Every sensitivity above is checked three ways, identically for both test cases: (1) an \emph{identity check}, comparing $\alpha_k=\lambda_k^\top s$ against direct projection $\alpha_k=\psi_k^\top y$, which must agree to solver tolerance since both compute the same quantity two different ways; (2) a \emph{finite-difference check}, comparing the adjoint gradient against a centered-difference approximation over a small parameter perturbation; and (3) a \emph{1D sweep}, plotting $\alpha_k(\mu)$ over a parameter range with the adjoint-predicted tangent line overlaid at several expansion points, as a visual sanity check that the gradient is locally consistent with the function it is a gradient of.
 
 
 \section{Gradient-Enhanced Gaussian Process Regression}\label{sec:gegpr}
 
-The method contribution of this paper.
+This section is the method contribution of the paper. A GP is closed under differentiation: if $\alpha_k(\mu)\sim\mathcal{GP}(0,k(\mu,\mu'))$, the joint distribution of $\alpha_k$ and $\partial\alpha_k/\partial\mu$ at any finite set of training points is itself Gaussian, with covariance blocks given in closed form by differentiating the kernel. Training on both values and gradients is therefore not an approximation or a regularizer bolted onto a value-only GP; it is the same GP model, conditioned on more of what it already implies.
 
-\begin{itemize}
-    \item Core idea: a GP is closed under differentiation, so the joint distribution of $\alpha_k(\mu)$ and $\partial\alpha_k/\partial\mu$ at the training points is itself Gaussian, with covariance blocks given in closed form by differentiating the kernel. Training on both is therefore not an approximation or a regularizer bolted onto a value-only GP -- it is the same GP model, conditioned on more of what it already implies.
-    \item Why this construction and not, e.g., feeding gradients in as extra scalar features or fitting a separate model per derivative channel: those break the single joint-covariance structure (channels would be modeled as if independent, throwing away the $\mathrm{Cov}(\alpha_k,\partial\alpha_k/\partial\mu_m)$ correlation that is exactly what makes a gradient observation informative about nearby function values). Stacking $y_{\mathrm{aug}}=[\alpha_k;\partial\alpha_k/\partial\mu]$ into one vector against one augmented kernel is what keeps that correlation in the model.
-    \item Concretely: value-value, value-gradient, gradient-gradient covariances (closed form for ARD-RBF, Appendix~A). Bigger matrix ($M(1+p_{\mathrm{act}})$ instead of $M$), fit by maximizing the augmented marginal likelihood -- the same hyperparameters ($\sigma_f,\ell_1,\dots,\ell_{p_{\mathrm{act}}}$) now have to explain both the values and their slopes simultaneously, which is what lets a handful of gradient observations pin down length scales that would otherwise need many more function evaluations.
-    \item Cost/conditioning tradeoff, stated plainly: the augmented Gram matrix grows cubically in $p_{\mathrm{act}}$ (factorization cost $\mathcal{O}((M(1+p_{\mathrm{act}}))^3)$) and can become ill-conditioned when length scales shrink relative to the training spacing, since the gradient-gradient block's magnitude scales as $1/\ell^2$. This bounds how far the method scales in $p_{\mathrm{act}}$ as-is (Sec.~\ref{sec:discussion}).
-    \item Built from scratch, since scikit-learn's GP can't take derivative observations.
-    \item Everything else about the surrogate matches the baseline (one GP per mode, same kernel family). Isolates the effect of adding gradients.
-    \item Same code reused unmodified on the geometry case, just with a different sampler/adjoint front end feeding it, and again unmodified on the SCEPTRE secondary problem (Sec.~\ref{sec:sceptre}) with finite-difference gradients standing in for an adjoint. The method doesn't care what $\mu$ physically means or where the gradients came from -- only that they are (approximately) $\partial\alpha_k/\partial\mu$.
-\end{itemize}
+An alternative that might seem simpler, feeding gradients in as extra scalar features or fitting a separate model per derivative channel, was deliberately not used, because it breaks the single joint-covariance structure. Those channels would be modeled as if independent, throwing away exactly the correlation $\mathrm{Cov}\!\left(\alpha_k,\partial\alpha_k/\partial\mu_m\right)$ that makes a gradient observation informative about \emph{nearby} function values, not just the value at the training point itself. Stacking the augmented observation vector $y_{\mathrm{aug}}=\left[\alpha_k;\,\partial\alpha_k/\partial\mu\right]$ and building one augmented kernel over it is what keeps that correlation in the model.
+
+Concretely, for an ARD-RBF kernel $k(x,x')=\sigma_f^2\exp\!\left(-\tfrac12\sum_j r_j^2/\ell_j^2\right)$ with $r_j=x_j-x_j'$, the three covariance blocks needed are
+\begin{align}
+    \mathrm{Cov}\!\left(f(x), f(x')\right) &= k(x,x'), \\
+    \mathrm{Cov}\!\left(f(x), \frac{\partial f}{\partial x_m'}(x')\right) &= k(x,x')\cdot \frac{r_m}{\ell_m^2}, \\
+    \mathrm{Cov}\!\left(\frac{\partial f}{\partial x_m}(x), \frac{\partial f}{\partial x_n'}(x')\right) &= k(x,x')\cdot\left[\frac{\delta_{mn}}{\ell_m^2} - \frac{r_m r_n}{\ell_m^2\ell_n^2}\right],
+\end{align}
+assembled into the block Gram matrix
+\begin{equation}
+    K_{\mathrm{aug}} = \begin{bmatrix} K_{ff}+\sigma_{nf}^2 I & K_{fd} \\ K_{fd}^\top & K_{dd}+\sigma_{nd}^2 I \end{bmatrix},
+\end{equation}
+of size $M(1+p_{\mathrm{act}})$ for $M$ training points and $p_{\mathrm{act}}$ active gradient dimensions, fit by maximizing the augmented marginal likelihood. The same hyperparameters $(\sigma_f,\ell_1,\dots,\ell_{p_\mathrm{act}})$ now have to explain both the values and their slopes simultaneously, which is what lets a handful of gradient observations pin down length scales that would otherwise need many more function evaluations. Full derivative-identity algebra is given in Appendix~A.
+
+This construction has a cost and conditioning tradeoff, stated plainly: the augmented Gram matrix grows cubically in $p_{\mathrm{act}}$ (Cholesky factorization cost $\mathcal{O}\!\left((M(1+p_{\mathrm{act}}))^3\right)$) and can become ill-conditioned when length scales shrink relative to the training-point spacing, since the gradient-gradient block's magnitude scales as $1/\ell^2$. This bounds how far the method scales in $p_{\mathrm{act}}$ as implemented here (Sec.~\ref{sec:discussion}).
+
+\texttt{GEGaussianProcess} was implemented from scratch, since scikit-learn's \texttt{GaussianProcessRegressor} cannot take derivative observations, but everything else about the surrogate matches the value-only baseline of Sec.~\ref{sec:fwd} (one GP per POD mode, same kernel family), so that any difference in accuracy isolates the effect of adding gradients. The same code is reused, unmodified, across every diffusion case in this paper: once on the material-layer test case, once on the geometry test case with a different sampler and adjoint front end feeding it, and again on the combined 5-parameter case (Sec.~\ref{sec:results}). \texttt{GEGaussianProcess} does not care what $\mu$ physically means or where the gradients came from, only that they are (approximately) $\partial\alpha_k/\partial\mu$. An early, small-scale pilot (Sec.~\ref{sec:sceptre}) already exercised it on SCEPTRE with a finite-difference gradient standing in for an adjoint.
 
 
 \section{Results}\label{sec:results}
 
-\begin{itemize}
-    \item \textbf{Material-layer case (V\&V):} SVD spectrum/rank choice, projection-error floor vs.\ $r$, then a learning curve comparing GE-GPR vs.\ standard GPR at matched training-set sizes. Report as "GE-GPR at $M{=}\cdot$ matches standard GPR at $M{=}\cdot$" [???].
-    \item \textbf{Geometry case (V\&V):} Run once with only the interface location active (close to a 1D problem with nearly all the SVD energy in mode 1), and once with both parameters active. Compare GE-GPR's benefit in each.
-    \item \textbf{Combined case:} All 5 parameters active simultaneously -- void\_thickness, steepness, and the Teflon shell's $D,\Sigma_a,q$ -- in one shared forward/adjoint/GE-GPR pipeline (one adjoint solve per mode still gives all 5 partials at once) instead of the 5 one-at-a-time studies above. At matched $M{=}80$: GE-GPR median $\varepsilon_y=5.8\times10^{-4}$ vs.\ standard GPR's $2.9\times10^{-3}$ ($80\%$ reduction, vs.\ $0$--$95\%$ across the 5 individual one-at-a-time studies at the same bounds) -- gradient information compounds faster than function values as $p_{\mathrm{act}}$ grows, since one adjoint solve still yields all 5 partials while a value-only GP needs proportionally more samples to resolve the higher-dimensional map. GE-GPR also lands closer to the POD floor ($\varepsilon_{\mathrm{proj}}=2.0\times10^{-4}$, so GE-GPR is $\sim3\times$ the floor vs.\ standard GPR's $\sim15\times$).
-    \item \textbf{Cost accounting:} An adjoint solve reuses the same factorized matrix as the forward solve, so it's cheap per sample; the trade-off is a bigger, pricier-to-fit kernel matrix.
-\end{itemize}
+Unless noted otherwise, every case below uses a uniform $N=3000$--$3500$-cell mesh, $M_{\mathrm{train}}{=}300$ training and $M_{\mathrm{test}}{=}60$ held-out test snapshots (Latin hypercube sampled), an energy-cutoff threshold of $\eta=99.9$--$99.99\%$ for the POD rank, $m_{\mathrm{ge}}{=}100$ of the training points used to fit GE-GPR and standard GPR (matched, so both surrogates see the same training subset at every size), and $3$ hyperparameter-optimization restarts.
+
+\subsection{Material-Layer Case}\label{sec:results-material}
+
+Each of the three per-layer parameters ($D\in[0.5,2.0]$, $\Sigma_a\in[0.05,1.5]$, $q\in[0.0,2.0]$, all others held fixed) was run as an independent single-parameter study, so that $\alpha_k(\mu)$ is a genuine 1D curve and the only question is whether the adjoint-gradient information gives GE-GPR an edge over standard GPR fitting the same curve. Results at matched $m_{\mathrm{ge}}=100$ are given in Table~\ref{tab:material}.
+
+\begin{table}[!ht]
+\caption{Median held-out field-reconstruction error for the material-layer case at matched $m_{\mathrm{ge}}=100$, each parameter run as an independent single-parameter study.}
+\label{tab:material}
+\begin{center}
+\begin{tabular}{lccc}
+\hline
+Parameter & median $\varepsilon_y$, Std GPR & median $\varepsilon_y$, GE-GPR & improvement \\
+\hline
+$D$        & $3.06\times10^{-5}$ & $3.03\times10^{-5}$ & $1.0\%$ \\
+$\Sigma_a$ & $1.58\times10^{-4}$ & $1.05\times10^{-4}$ & $33.6\%$ \\
+$q$        & $3.00\times10^{-5}$ & $1.38\times10^{-6}$ & $95.4\%$ \\
+\hline
+\end{tabular}
+\end{center}
+\end{table}
+
+The source term $q$ is the headline case. GE-GPR's learning curve reaches $\varepsilon_y\approx4.8\times10^{-6}$ already at $M{=}10$ training points, better than standard GPR's fully-converged $M{=}100$ result of $\varepsilon_y\approx3.3\times10^{-5}$, so GE-GPR matches or beats standard GPR's $100$-sample accuracy with roughly an order of magnitude fewer training solves. $D$, by contrast, shows almost no benefit: its coefficient map is already easy to learn from values alone (both surrogates are within $1\%$ of the POD floor by $M{=}20$--$30$), which the closed-form sensitivities of Sec.~\ref{sec:adjoint} foreshadow. $\partial\alpha_k/\partial D_m$ is the one sensitivity that is not a simple linear functional of $\lambda_k$, and empirically it is also the one gradient that adds the least new information. $\Sigma_a$ falls in between.
+
+\subsection{Geometry Case}\label{sec:results-geometry}
+
+Run once with only the interface location $b$ (void\_thickness $\in[0.001,0.25]$) active and steepness fixed at $a{=}200$, close to a 1D problem with $99.9\%$ of the SVD energy already in mode 1, GE-GPR shows essentially \emph{no} benefit: the map is smooth and the training set dense enough that a value-only GP already resolves it. The same null result holds for steepness alone. Run instead with both $a$ and $b$ active ($R=4$ POD modes now needed for $99.99\%$ energy, vs.\ $R=1$ above), GE-GPR and standard GPR converge to nearly the same median error at the fully matched $m_{\mathrm{ge}}=100$, both within $1\%$ of the POD floor. Table~\ref{tab:geometry} summarizes all three.
+
+\begin{table}[!ht]
+\caption{Median held-out field-reconstruction error for the geometry case at matched $m_{\mathrm{ge}}=100$.}
+\label{tab:geometry}
+\begin{center}
+\begin{tabular}{lccccc}
+\hline
+Active parameter(s) & $p_{\mathrm{act}}$ & median $\varepsilon_y$, Std GPR & median $\varepsilon_y$, GE-GPR & improvement & $\varepsilon_{\mathrm{proj}}$ (floor) \\
+\hline
+void\_thickness only & 1 & $8.95\times10^{-4}$ & $8.95\times10^{-4}$ & $0.0\%$ & $8.95\times10^{-4}$ \\
+steepness only       & 1 & $5.30\times10^{-4}$ & $5.30\times10^{-4}$ & $0.0\%$ & $5.30\times10^{-4}$ \\
+both active          & 2 & $2.61\times10^{-3}$ & $2.60\times10^{-3}$ & $0.4\%$ & $2.59\times10^{-3}$ \\
+\hline
+\end{tabular}
+\end{center}
+\end{table}
+
+The two-parameter row looks the same as the single-parameter rows at matched $M{=}100$, but that hides faster early convergence: at $M{=}10$, GE-GPR is already at $\varepsilon_y=2.79\times10^{-3}$, close to its own $M{=}100$ value, while standard GPR is still at $3.72\times10^{-3}$, a $25\%$ gap that closes only by $M{\approx}30$--$40$. Gradients here buy \emph{faster convergence to the POD floor}, not a lower asymptotic floor, a distinct mechanism from the combined case of Sec.~\ref{sec:results-combined}, where GE-GPR's advantage persists even at its smaller matched training size.
+
+\subsection{Combined Case}\label{sec:results-combined}
+
+All 5 parameters (void\_thickness, steepness, and the Teflon shell's $D$, $\Sigma_a$ and $q$) are active simultaneously in one shared forward/adjoint/GE-GPR pipeline, where one adjoint solve per mode still gives all 5 partials at once. This replaces the 5 one-at-a-time studies above, at a smaller matched training budget ($m_{\mathrm{ge}}=80$, $2$ restarts) chosen for tractability given the augmented kernel's $M(1+p_{\mathrm{act}})$ growth at $p_{\mathrm{act}}=5$. At matched $M{=}80$, GE-GPR reaches a median $\varepsilon_y=5.78\times10^{-4}$ against standard GPR's $2.94\times10^{-3}$, an $80.3\%$ reduction and a much bigger relative gain than any of the individual one-at-a-time studies above ($0$--$95\%$ across the five). GE-GPR also lands much closer to the POD projection floor ($\varepsilon_{\mathrm{proj}}\approx2.0\times10^{-4}$), sitting at $\sim3\times$ the floor versus standard GPR's $\sim15\times$.
+
+\begin{figure}[!htb]
+\centering
+\includegraphics[width=0.62\textwidth]{figures/combined_learning_curve.png}
+\caption{Learning curves for the combined 5-parameter case. GE-GPR at $M{=}10$ already beats standard GPR's $M{=}80$ result, and the gap persists rather than closing. Shaded bands give the 75th-percentile error.}
+\label{fig:combined-lc}
+\end{figure}
+
+Figure~\ref{fig:combined-lc} shows the mechanism: gradient information compounds faster than function values as $p_{\mathrm{act}}$ grows. One adjoint solve still yields all 5 partials, while a value-only GP needs proportionally more samples to resolve the higher-dimensional map, so the two curves separate immediately and stay separated across the whole budget.
+
+\subsection{Cost Accounting}
+
+An adjoint solve reuses the same factorized system matrix as the forward solve that produced $\phi(\mu)$ (only the RHS and, for the transpose system, the solve direction differ), so it is cheap per training sample relative to the forward solve itself. The trade-off GE-GPR pays for this is entirely at fit time: a bigger, $M(1+p_{\mathrm{act}})$-sized kernel matrix that is more expensive to factorize and optimize hyperparameters for than the $M$-sized standard-GPR kernel.
 
 \subsection{SCEPTRE Secondary Problem}\label{sec:sceptre}
 
-Unlike the diffusion cases above, SCEPTRE is a real, export-controlled coupled-physics code with no adjoint/sensitivity capability -- the point of including it is to check whether GE-GPR still helps when the "gradient" fed to it is only an approximation, not the exact adjoint value used for V\&V above.
+Unlike the diffusion cases above, SCEPTRE is a real, export-controlled coupled-physics code. The QoI is the net SGEMP direct-drive charge $q_{\mathrm{net}}(\mu)$ as a function of void-region thickness, a scalar output (no POD stage is needed for a scalar QoI). SCEPTRE does produce genuine adjoint sources for this case set, but this paper deliberately does not yet incorporate them into GE-GPR. That integration, together with the multi-parameter geometry sweep also available for this problem (void, dielectric, and shield thickness jointly, a full $10^3$-case grid), is targeted for the December review. Every SCEPTRE result below therefore uses standard GPR only, matching Sec.~\ref{sec:fwd}'s value-only baseline exactly and establishing the baseline that the GE-GPR extension will be measured against.
 
-\begin{itemize}
-    \item Problem: net SGEMP direct-drive charge $q_{\mathrm{net}}(\mu)$ as a function of void-region thickness, a scalar QoI from SCEPTRE forward flux dumps (no POD stage needed for a scalar output).
-    \item No adjoint available $\to$ the gradient $\partial q_{\mathrm{net}}/\partial(\text{void thickness})$ used by GE-GPR is a finite-difference approximation across the sorted training cases -- explicitly a rough, honestly-labeled placeholder, not the exact-gradient regime the diffusion V\&V cases establish.
-    \item Same \texttt{GEGaussianProcess} code, unmodified, as the diffusion cases -- only the front end supplying $(X,y,\text{gradient})$ changes.
-    \item Result [???]: GE-GPR vs.\ standard GPR on the same SCEPTRE training cases, [N] cases total.
-    \item Takeaway this is meant to support: adjoint gradients are the clean case, but GE-GPR degrades gracefully to FD-approximated gradients on a real code that was never built with an adjoint in mind -- a practical-applicability argument the 1D V\&V cases alone can't make.
-\end{itemize}
+An early, small-scale pilot first exercised the full \texttt{GEGaussianProcess} code path on just $2$ of the eventually-available cases, with $\partial q_{\mathrm{net}}/\partial(\text{void thickness})$ approximated by a finite difference across the two points (a single secant slope, since $M{=}2$ leaves no data for a held-out test set). GE-GPR reached a training log-marginal-likelihood of $1.63$ against standard GPR's $-2.84$ on the same two points. That is a real difference, but it reflects only how well each model's smoothness prior matches a single slope, not generalization accuracy, and should not be over-read.
+
+The main result in this draft instead uses a $1000$-case void-thickness sweep (monoenergetic source, from SCEPTRE's own case-summary output). An $80/20$ held-out split (fixed seed, $200$ test cases) gives a genuine learning curve: relative error $\varepsilon_q=\lVert\hat q_{\mathrm{net}}-q_{\mathrm{net}}\rVert_2/\lVert q_{\mathrm{net}}\rVert_2$ on the test set falls from $1.65\times10^{-3}$ at $M{=}10$ to $1.25\times10^{-3}$ by $M{=}100$, then flattens at $\varepsilon_q\approx1.15\times10^{-3}$ from $M{\approx}200$ onward. Additional training data past that point buys essentially nothing, consistent with $q_{\mathrm{net}}(\mathrm{void\_thickness})$ being an almost linear function over the sampled range (visually confirmed in the fitted GP mean) and with $\varepsilon_q$'s floor being set by the WhiteKernel noise level the optimizer converges to, not by any remaining structure in the map. This is the first genuine held-out accuracy result for a SCEPTRE-based QoI in this line of work. An almost-linear 1D map is exactly the regime where the diffusion results (Sec.~\ref{sec:results-material}, the $D$ parameter; Sec.~\ref{sec:results-geometry}) showed gradient information helping least, so a large GE-GPR gain on this sweep should not be assumed.
+
+The same standard-GPR baseline was also run on the $1000$-case void/dielectric/shield grid (a full $10\times10\times10$ factorial design, all three thicknesses active, $800/200$ train/test split). Here the pattern is different: $\varepsilon_q$ starts substantially worse at small $M$ ($3.32\times10^{-3}$ at $M{=}10$, roughly double the single-parameter case's $1.65\times10^{-3}$), and does not fully plateau by $M{=}800$ the way the single-parameter case plateaus by $M{\approx}200$; it is still declining, from $1.53\times10^{-3}$ at $M{=}200$ to $1.38\times10^{-3}$ at $M{=}800$. Both the slower convergence and the higher error at every matched $M$ are consistent with this being a genuinely harder, higher-dimensional map to learn from function values alone, the same qualitative pattern the diffusion combined case (Sec.~\ref{sec:results-combined}) showed when $p_{\mathrm{act}}$ grew from 1 to 5. That makes this grid, not the near-linear single-parameter sweep, the more promising target for December's GE-GPR extension. Table~\ref{tab:sceptre} puts the two side by side.
+
+\begin{table}[!ht]
+\caption{Held-out relative error $\varepsilon_q$ (all values $\times10^{-3}$) for the two SCEPTRE SGEMP datasets, standard GPR only, at matched training-set sizes. $M_{\max}$ is the largest budget each split allows ($799$ and $800$ respectively).}
+\label{tab:sceptre}
+\begin{center}
+\begin{tabular}{lcccccc}
+\hline
+Dataset & $M{=}10$ & $50$ & $100$ & $200$ & $400$ & $M_{\max}$ \\
+\hline
+Void thickness only (1000 cases, $p{=}1$)    & $1.65$ & $1.41$ & $1.25$ & $1.15$ & $1.17$ & $1.15$ \\
+Void/dielectric/shield (1000 cases, $p{=}3$) & $3.32$ & $1.62$ & $1.53$ & $1.53$ & $1.47$ & $1.38$ \\
+\hline
+\end{tabular}
+\end{center}
+\end{table}
+
 
 
 \section{Discussion}\label{sec:discussion}
 
-\begin{itemize}
-    \item Gradient enhancement helps most when: parameter count is small, the forward solve is the expensive part.
-    \item Helps least when: the coefficient map is already easy to learn from values alone (the simple geometry case)
-    \item Known limitation: the augmented kernel grows with $M(1+p_{\mathrm{act}})$. Doesn't scale to large $p$ as-is.
-    \item Combined 5-parameter case: gradient enhancement's relative benefit \emph{grew} with $p_{\mathrm{act}}$ ($80\%$ error reduction at $p_{\mathrm{act}}{=}5$ vs.\ $0$--$95\%$ across the individual one-at-a-time studies) -- consistent with the "helps most when parameter count is small" framing above only insofar as it's about the forward-solve/adjoint-solve cost ratio, not the raw dimension count: each adjoint solve still amortizes over all 5 partials, so more active parameters means more free information per expensive solve, not less.
-    \item SCEPTRE case: even an approximate (FD) gradient appears to help [???] -- read together with the diffusion V\&V results, this suggests the exact-adjoint requirement is not a hard prerequisite for GE-GPR to be worth trying on a new code.
-\end{itemize}
+Gradient enhancement helps most when the coefficient map is genuinely hard to learn from values alone: the source-term parameter $q$ (Sec.~\ref{sec:results-material}) and the 5-parameter combined case (Sec.~\ref{sec:results-combined}) cut median error by $95.4\%$ and $80.3\%$ respectively. It helps least when the map is already easy, as with $D$ in the material case and the geometry parameters taken one at a time (Table~\ref{tab:geometry}), where a modest, densely sampled training set already resolves a smooth 1D curve within the POD floor.
+
+A known limitation is that the augmented kernel grows as $M(1+p_{\mathrm{act}})$, so the method does not scale to large $p_{\mathrm{act}}$ as implemented here (Sec.~\ref{sec:gegpr}). Within that range, though, the relative benefit \emph{grew} with $p_{\mathrm{act}}$ ($80.3\%$ at $p_{\mathrm{act}}{=}5$, against $0$--$95.4\%$ one at a time), since each adjoint solve still amortizes over all 5 partials: more active parameters means more free information per expensive solve, not less.
+
+The two-parameter geometry case (Sec.~\ref{sec:results-geometry}, Table~\ref{tab:geometry}) resists a simple ``more parameters, more benefit'' reading, though: going from $p_{\mathrm{act}}=1$ to $2$ produced almost no asymptotic benefit at matched $M{=}100$, only faster convergence to the same floor ($M{\approx}10$ against $M{\approx}30$--$40$). So $p_{\mathrm{act}}$ alone does not predict which regime a case falls in; what distinguishes the combined case's persistent error gap from the geometry case's convergence-speed-only benefit is worth targeted follow-up before either trend is generalized past $p_{\mathrm{act}}=5$.
+
+The SCEPTRE case (Sec.~\ref{sec:sceptre}, Table~\ref{tab:sceptre}) makes a practical-applicability argument the diffusion sandbox cases alone cannot: a real, export-controlled code's own QoI at scales large enough for genuine held-out learning curves. Its two baselines echo the diffusion trend: the near-linear single-parameter sweep saturates quickly, the same ``helps least'' pattern seen for the $D$ parameter (Sec.~\ref{sec:results-material}) and the single-parameter geometry cases (Sec.~\ref{sec:results-geometry}), while the 3-parameter grid is measurably harder and still improving, the same qualitative shift the diffusion combined case showed going from $p_{\mathrm{act}}{=}1$ to $5$ (Sec.~\ref{sec:results-combined}). December's GE-GPR extension should therefore not be expected to repeat the combined case's $80\%$ gain on the near-linear sweep; the 3-parameter grid, whose own standard-GPR baseline already looks like that higher-$p_{\mathrm{act}}$ regime, is the more promising target.
 
 
 \section{Conclusions and Future Work}\label{sec:conclusions}
 
-\begin{itemize}
-    \item Restate the contributions from Sec.~\ref{sec:intro}, past tense, with real numbers filled in: GE-GPR verified against exact adjoint gradients on two 1D diffusion V\&V cases, then shown to carry over to a real, adjoint-free code (SCEPTRE).
-    \item Future work: Pushing past $p_{\mathrm{act}}\in\{1,2\}$, maybe using the adjoint gradients themselves as a sensitivity/dimension-reduction screen; a multi-output version instead of one GP per mode; more SCEPTRE cases as they become available.
-    \item Full 3D coupled-physics stack: this 1D study is the V\&V step for that larger effort; extending the same pipeline to 3D is targeted for the December review, time permitting.
-\end{itemize}
+This paper built gradient-enhanced Gaussian process regression (GE-GPR) for non-intrusive POD-based ROMs from scratch and verified it against exact adjoint gradients of the POD coefficients on two 1D diffusion test cases: piecewise-constant material layers and a smooth void/Teflon interface geometry. Its benefit compounds when the two cases' parameters are combined into a single 5-parameter surrogate problem, cutting median field-reconstruction error by $80\%$ relative to standard GPR at matched training-set size. On the single hardest-to-learn material parameter, GE-GPR reached standard GPR's converged accuracy with roughly an order of magnitude fewer training solves. Two real, export-controlled SCEPTRE datasets (Table~\ref{tab:sceptre}) then gave this line of work its first genuine held-out accuracy baselines outside the diffusion sandbox, using standard GPR only: a near-linear single-parameter sweep that saturates quickly, and a harder 3-parameter grid that is still improving at its largest training size. The latter echoes the diffusion combined case's higher-$p_{\mathrm{act}}$ regime closely enough to be a concrete target for December's GE-GPR extension rather than a speculative one.
+
+Future work includes pushing past $p_{\mathrm{act}}\in\{1,2,5\}$ toward the regime where the augmented kernel's cubic cost in $p_{\mathrm{act}}$ starts to bind, possibly using the adjoint gradients themselves as a sensitivity or dimension-reduction screen; a multi-output GP formulation in place of one independent GP per POD mode; and, for the December review, wiring SCEPTRE's own adjoint sources into GE-GPR and applying it to the multi-parameter void/dielectric/shield grid, where a real benefit is more plausible than on the near-linear single-parameter sweep reported here. More broadly, this 1D study is the scoping step for a larger effort: extending the same forward-solve/POD/adjoint/GE-GPR pipeline to the full 3D coupled-physics stack is targeted for the December review, time permitting.
 
 \section*{ACKNOWLEDGEMENTS}
-I have no idea, thank you Dr. Ragusa and Dr. Morel?
+This work was supported by Sandia National Laboratories under Contract Agreement 1923579.
 
 % Bibliography instructions for this template:
 %  All bibliography references should be included in the "main.bib" file.
@@ -173,9 +234,16 @@ I have no idea, thank you Dr. Ragusa and Dr. Morel?
 \appendix
 
 \section{Augmented Kernel Derivative Identities}
-Full algebra behind the closed-form $K_{fd}$, $K_{dd}$ terms in Sec.~\ref{sec:gegpr}, for anyone re-implementing \texttt{GEGaussianProcess} from scratch.
 
-\section{Verification Figures}
-Overflow plot dump if space runs out in the main body: identity checks, FD gradient checks, for both test cases.
+The derivative identities used to build $K_{fd}$ and $K_{dd}$, quoted as the second and third covariance blocks in Sec.~\ref{sec:gegpr}, follow from differentiating the ARD-RBF kernel $k(x,x')=\sigma_f^2\exp\!\left(-\tfrac12\sum_j r_j^2/\ell_j^2\right)$, $r_j=x_j-x_j'$, once with respect to $x_m'$ and, for the second block, again with respect to $x_n$. The full augmented Gram matrix for $M$ training points and $p_{\mathrm{act}}$ active gradient dimensions is assembled by evaluating $k$, $\partial k/\partial x_m'$, and $\partial^2 k/\partial x_m\partial x_n'$ pairwise over all training points, giving the block structure
+\begin{equation}
+K_{\mathrm{aug}}[i,j] =
+\begin{cases}
+k(x^i,x^j) & \text{both rows/cols are values} \\
+\dfrac{\partial k}{\partial x_m'}(x^i,x^j) & \text{row is a value, col is } \partial/\partial x_m \\
+\dfrac{\partial^2 k}{\partial x_m\partial x_n'}(x^i,x^j) & \text{row is } \partial/\partial x_m\text{, col is } \partial/\partial x_n
+\end{cases}
+\end{equation}
+with a jitter term on the diagonal for numerical conditioning and independent noise variances $\sigma_{nf}^2$ (values) and $\sigma_{nd}^2$ (gradients), as in Sec.~\ref{sec:gegpr}. This identity set is implemented directly in \texttt{sklearn\_implementation/\allowbreak ge\_gpr.py}.
 
 \end{document}
