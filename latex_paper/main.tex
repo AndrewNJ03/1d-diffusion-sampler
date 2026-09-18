@@ -114,7 +114,7 @@ This construction has a cost and conditioning tradeoff, stated plainly: the augm
 
 \section{Results}\label{sec:results}
 
-Unless noted otherwise, every case below uses a uniform $N=3000$--$3500$-cell mesh, $M_{\mathrm{train}}{=}300$ training and $M_{\mathrm{test}}{=}60$ held-out test snapshots (Latin hypercube sampled), an energy-cutoff threshold of $\eta=99.9$--$99.99\%$ for the POD rank, $m_{\mathrm{ge}}{=}100$ of the training points used to fit GE-GPR and standard GPR (matched, so both surrogates see the same training subset at every size), and $3$ hyperparameter-optimization restarts.
+Unless noted otherwise, every case below uses a uniform $N=200$-cell mesh, $M_{\mathrm{train}}{=}300$ training and $M_{\mathrm{test}}{=}60$ held-out test snapshots (Latin hypercube sampled), an energy-cutoff threshold of $\eta=99.999\%$ for the POD rank, $m_{\mathrm{ge}}{=}100$ of the training points used to fit GE-GPR and standard GPR (matched, so both surrogates see the same training subset at every size), and $3$ hyperparameter-optimization restarts. This mesh resolution and energy threshold are shared identically across the material, geometry, and combined cases below, so results are on a directly comparable footing.
 
 \subsection{Material-Layer Case}\label{sec:results-material}
 
@@ -140,7 +140,7 @@ The source term $q$ is the headline case. GE-GPR's learning curve reaches $\vare
 
 \subsection{Geometry Case}\label{sec:results-geometry}
 
-Run once with only the interface location $b$ (void\_thickness $\in[0.001,0.25]$) active and steepness fixed at $a{=}200$, close to a 1D problem with $99.9\%$ of the SVD energy already in mode 1, GE-GPR shows essentially \emph{no} benefit: the map is smooth and the training set dense enough that a value-only GP already resolves it. The same null result holds for steepness alone. Run instead with both $a$ and $b$ active ($R=4$ POD modes now needed for $99.99\%$ energy, vs.\ $R=1$ above), GE-GPR and standard GPR converge to nearly the same median error at the fully matched $m_{\mathrm{ge}}=100$, both within $1\%$ of the POD floor. Table~\ref{tab:geometry} summarizes all three.
+Run once with only the interface location $b$ (void\_thickness $\in[0.001,0.25]$) active and steepness fixed at $a{=}200$, mode 1 carries $99.99\%$ of the SVD energy ($R=2$ at the $99.999\%$ threshold), and GE-GPR shows essentially \emph{no} benefit: the map is smooth and the training set dense enough that a value-only GP already resolves it. Steepness alone ($R=1$) shows the same null result. With both $a$ and $b$ active ($R=2$), GE-GPR and standard GPR again converge to nearly the same median error at matched $m_{\mathrm{ge}}=100$, both within $1\%$ of the POD floor. Table~\ref{tab:geometry} summarizes all three.
 
 \begin{table}[!ht]
 \caption{Median held-out field-reconstruction error for the geometry case at matched $m_{\mathrm{ge}}=100$.}
@@ -150,19 +150,19 @@ Run once with only the interface location $b$ (void\_thickness $\in[0.001,0.25]$
 \hline
 Active parameter(s) & $p_{\mathrm{act}}$ & median $\varepsilon_y$, Std GPR & median $\varepsilon_y$, GE-GPR & improvement & $\varepsilon_{\mathrm{proj}}$ (floor) \\
 \hline
-void\_thickness only & 1 & $8.95\times10^{-4}$ & $8.95\times10^{-4}$ & $0.0\%$ & $8.95\times10^{-4}$ \\
+void\_thickness only & 1 & $8.84\times10^{-4}$ & $8.84\times10^{-4}$ & $0.0\%$ & $8.84\times10^{-4}$ \\
 steepness only       & 1 & $5.30\times10^{-4}$ & $5.30\times10^{-4}$ & $0.0\%$ & $5.30\times10^{-4}$ \\
-both active          & 2 & $2.61\times10^{-3}$ & $2.60\times10^{-3}$ & $0.4\%$ & $2.59\times10^{-3}$ \\
+both active          & 2 & $9.33\times10^{-4}$ & $9.32\times10^{-4}$ & $0.1\%$ & $9.32\times10^{-4}$ \\
 \hline
 \end{tabular}
 \end{center}
 \end{table}
 
-The two-parameter row looks the same as the single-parameter rows at matched $M{=}100$, but that hides faster early convergence: at $M{=}10$, GE-GPR is already at $\varepsilon_y=2.79\times10^{-3}$, close to its own $M{=}100$ value, while standard GPR is still at $3.72\times10^{-3}$, a $25\%$ gap that closes only by $M{\approx}30$--$40$. Gradients here buy \emph{faster convergence to the POD floor}, not a lower asymptotic floor, a distinct mechanism from the combined case of Sec.~\ref{sec:results-combined}, where GE-GPR's advantage persists even at its smaller matched training size.
+The two-parameter row looks the same as the single-parameter rows at matched $M{=}100$, but that hides faster early convergence: at $M{=}10$, GE-GPR is at $\varepsilon_y=1.32\times10^{-3}$ against standard GPR's $1.37\times10^{-3}$, both noisy below $M{\approx}20$. GE-GPR settles at its floor by $M{\approx}30$--$40$; standard GPR does not fully close the gap until $M{\approx}75$--$100$. Gradients here buy \emph{faster convergence to the POD floor}, not a lower asymptotic floor, a distinct mechanism from the combined case of Sec.~\ref{sec:results-combined}, where GE-GPR's advantage persists even at its smaller matched training size.
 
 \subsection{Combined Case}\label{sec:results-combined}
 
-All 5 parameters (void\_thickness, steepness, and the Teflon shell's $D$, $\Sigma_a$ and $q$) are active simultaneously in one shared forward/adjoint/GE-GPR pipeline, where one adjoint solve per mode still gives all 5 partials at once. This replaces the 5 one-at-a-time studies above, at a smaller matched training budget ($m_{\mathrm{ge}}=80$, $2$ restarts) chosen for tractability given the augmented kernel's $M(1+p_{\mathrm{act}})$ growth at $p_{\mathrm{act}}=5$. At matched $M{=}80$, GE-GPR reaches a median $\varepsilon_y=5.78\times10^{-4}$ against standard GPR's $2.94\times10^{-3}$, an $80.3\%$ reduction and a much bigger relative gain than any of the individual one-at-a-time studies above ($0$--$95\%$ across the five). GE-GPR also lands much closer to the POD projection floor ($\varepsilon_{\mathrm{proj}}\approx2.0\times10^{-4}$), sitting at $\sim3\times$ the floor versus standard GPR's $\sim15\times$.
+All 5 parameters (void\_thickness, steepness, and the Teflon shell's $D$, $\Sigma_a$ and $q$) are active simultaneously in one shared forward/adjoint/GE-GPR pipeline, where one adjoint solve per mode still gives all 5 partials at once. This replaces the 5 one-at-a-time studies above, at a smaller matched training budget ($m_{\mathrm{ge}}=80$, $2$ restarts) chosen for tractability given the augmented kernel's $M(1+p_{\mathrm{act}})$ growth at $p_{\mathrm{act}}=5$. At matched $M{=}80$, GE-GPR reaches a median $\varepsilon_y=6.83\times10^{-4}$ against standard GPR's $2.95\times10^{-3}$, a $76.8\%$ reduction and a much bigger relative gain than any of the individual one-at-a-time studies above ($0$--$95\%$ across the five). GE-GPR also lands much closer to the POD projection floor ($\varepsilon_{\mathrm{proj}}\approx2.0\times10^{-4}$), sitting at $\sim3.5\times$ the floor versus standard GPR's $\sim15\times$.
 
 \begin{figure}[!htb]
 \centering
@@ -206,11 +206,11 @@ Void/dielectric/shield (1000 cases, $p{=}3$) & $3.32$ & $1.62$ & $1.53$ & $1.53$
 
 \section{Discussion}\label{sec:discussion}
 
-Gradient enhancement helps most when the coefficient map is genuinely hard to learn from values alone: the source-term parameter $q$ (Sec.~\ref{sec:results-material}) and the 5-parameter combined case (Sec.~\ref{sec:results-combined}) cut median error by $95.4\%$ and $80.3\%$ respectively. It helps least when the map is already easy, as with $D$ in the material case and the geometry parameters taken one at a time (Table~\ref{tab:geometry}), where a modest, densely sampled training set already resolves a smooth 1D curve within the POD floor.
+Gradient enhancement helps most when the coefficient map is genuinely hard to learn from values alone: the source-term parameter $q$ (Sec.~\ref{sec:results-material}) and the 5-parameter combined case (Sec.~\ref{sec:results-combined}) cut median error by $95.4\%$ and $76.8\%$ respectively. It helps least when the map is already easy, as with $D$ in the material case and the geometry parameters taken one at a time (Table~\ref{tab:geometry}), where a modest, densely sampled training set already resolves a smooth 1D curve within the POD floor.
 
-A known limitation is that the augmented kernel grows as $M(1+p_{\mathrm{act}})$, so the method does not scale to large $p_{\mathrm{act}}$ as implemented here (Sec.~\ref{sec:gegpr}). Within that range, though, the relative benefit \emph{grew} with $p_{\mathrm{act}}$ ($80.3\%$ at $p_{\mathrm{act}}{=}5$, against $0$--$95.4\%$ one at a time), since each adjoint solve still amortizes over all 5 partials: more active parameters means more free information per expensive solve, not less.
+A known limitation is that the augmented kernel grows as $M(1+p_{\mathrm{act}})$, so the method does not scale to large $p_{\mathrm{act}}$ as implemented here (Sec.~\ref{sec:gegpr}). Within that range, though, the relative benefit \emph{grew} with $p_{\mathrm{act}}$ ($76.8\%$ at $p_{\mathrm{act}}{=}5$, against $0$--$95.4\%$ one at a time), since each adjoint solve still amortizes over all 5 partials: more active parameters means more free information per expensive solve, not less.
 
-The two-parameter geometry case (Sec.~\ref{sec:results-geometry}, Table~\ref{tab:geometry}) resists a simple ``more parameters, more benefit'' reading, though: going from $p_{\mathrm{act}}=1$ to $2$ produced almost no asymptotic benefit at matched $M{=}100$, only faster convergence to the same floor ($M{\approx}10$ against $M{\approx}30$--$40$). So $p_{\mathrm{act}}$ alone does not predict which regime a case falls in; what distinguishes the combined case's persistent error gap from the geometry case's convergence-speed-only benefit is worth targeted follow-up before either trend is generalized past $p_{\mathrm{act}}=5$.
+The two-parameter geometry case (Sec.~\ref{sec:results-geometry}, Table~\ref{tab:geometry}) resists a simple ``more parameters, more benefit'' reading, though: going from $p_{\mathrm{act}}=1$ to $2$ produced almost no asymptotic benefit at matched $M{=}100$, only faster convergence to the same floor ($M{\approx}30$--$40$ against $M{\approx}75$--$100$). So $p_{\mathrm{act}}$ alone does not predict which regime a case falls in; what distinguishes the combined case's persistent error gap from the geometry case's convergence-speed-only benefit is worth targeted follow-up before either trend is generalized past $p_{\mathrm{act}}=5$.
 
 The SCEPTRE case (Sec.~\ref{sec:sceptre}, Table~\ref{tab:sceptre}) makes a practical-applicability argument the diffusion sandbox cases alone cannot: a real, export-controlled code's own QoI at scales large enough for genuine held-out learning curves. Its two baselines echo the diffusion trend: the near-linear single-parameter sweep saturates quickly, the same ``helps least'' pattern seen for the $D$ parameter (Sec.~\ref{sec:results-material}) and the single-parameter geometry cases (Sec.~\ref{sec:results-geometry}), while the 3-parameter grid is measurably harder and still improving, the same qualitative shift the diffusion combined case showed going from $p_{\mathrm{act}}{=}1$ to $5$ (Sec.~\ref{sec:results-combined}). December's GE-GPR extension should therefore not be expected to repeat the combined case's $80\%$ gain on the near-linear sweep; the 3-parameter grid, whose own standard-GPR baseline already looks like that higher-$p_{\mathrm{act}}$ regime, is the more promising target.
 
@@ -222,7 +222,7 @@ This paper built gradient-enhanced Gaussian process regression (GE-GPR) for non-
 Future work includes pushing past $p_{\mathrm{act}}\in\{1,2,5\}$ toward the regime where the augmented kernel's cubic cost in $p_{\mathrm{act}}$ starts to bind, possibly using the adjoint gradients themselves as a sensitivity or dimension-reduction screen; a multi-output GP formulation in place of one independent GP per POD mode; and, for the December review, wiring SCEPTRE's own adjoint sources into GE-GPR and applying it to the multi-parameter void/dielectric/shield grid, where a real benefit is more plausible than on the near-linear single-parameter sweep reported here. More broadly, this 1D study is the scoping step for a larger effort: extending the same forward-solve/POD/adjoint/GE-GPR pipeline to the full 3D coupled-physics stack is targeted for the December review, time permitting.
 
 \section*{ACKNOWLEDGEMENTS}
-This work was supported by Sandia National Laboratories under Contract Agreement 1923579.
+This work was supported by Sandia National Laboratories under Contract Agreement 2565183.
 
 % Bibliography instructions for this template:
 %  All bibliography references should be included in the "main.bib" file.

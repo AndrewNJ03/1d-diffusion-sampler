@@ -99,6 +99,7 @@ _VOID_FIX = 0.125 * _GEO_SCALE  # midpoint of the (scaled) void_bounds range
 _GEO_GE_SHARED = dict(
     L=_GEO_L, core_radius=_GEO_CORE_RADIUS, shield_thickness=_GEO_SHIELD_THICKNESS,
     shell_width=_GEO_SHELL_WIDTH, qoi_xmin=_GEO_QOI_XMIN, qoi_xmax=_GEO_QOI_XMAX,
+    n_cells=200, energy_threshold=0.99999,
     m_ge=250, n_restarts=3, learning_curve_sizes=[10, 20, 30, 50, 75, 100, 150, 200, 250],
     run_svd_stage=True,
 )

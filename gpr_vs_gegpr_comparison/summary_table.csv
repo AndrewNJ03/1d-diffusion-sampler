@@ -2,5 +2,5 @@ parameter,domain,median_eps_std_gpr,median_eps_ge_gpr,improvement_pct,max_eps_st
 D,material,3.0618e-05,3.0303e-05,1.0,1.1163e-04,1.0960e-04,3.0302e-05
 Sigma_a,material,1.5757e-04,1.0457e-04,33.6,5.2262e-04,4.3092e-04,1.0457e-04
 q,material,2.9951e-05,1.3809e-06,95.4,4.6669e-03,1.4923e-05,2.7219e-07
-void_thickness,geometry,8.9466e-04,8.9466e-04,0.0,7.4958e-03,7.4958e-03,8.9466e-04
-steepness,geometry,5.3036e-04,5.3036e-04,0.0,1.8170e-03,1.8170e-03,5.3036e-04
+void_thickness,geometry,8.8403e-04,8.8403e-04,0.0,7.3999e-03,7.3999e-03,8.8403e-04
+steepness,geometry,5.2954e-04,5.2954e-04,0.0,1.8141e-03,1.8141e-03,5.2954e-04

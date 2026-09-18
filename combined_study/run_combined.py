@@ -56,7 +56,7 @@ COMBINED_KWARGS = dict(
     d_teflon_bounds=(0.5, 2.0),
     sigma_a_teflon_bounds=(0.05, 1.5),
     q_teflon_bounds=(0.0, 2.0),
-    m_train=300, m_test=60, seed=1, energy_threshold=0.9999,
+    n_cells=200, m_train=300, m_test=60, seed=1, energy_threshold=0.99999,
     m_ge=80, n_restarts=2,
     learning_curve_sizes=[10, 20, 30, 40, 50, 60, 70, 80],
     output_dir=os.path.join(_HERE, "output_graphs_combined"),
