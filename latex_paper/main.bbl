@@ -3,38 +3,60 @@
 \providecommand{\url}[1]{\texttt{#1}}
 \providecommand{\urlprefix}{URL }
 
-\bibitem{bouhlel_gek}
-M.~A. Bouhlel, N.~Bartoli, R.~G. Regis, A.~Otsmane, and J.~Morlier.
-\newblock \enquote{Gradient-enhanced kriging for high-dimensional problems.}
-\newblock \emph{Engineering with Computers} (2019).
-\newblock \urlprefix\url{https://arxiv.org/pdf/1708.02663}.
-
-\bibitem{han_gek}
-Z.-H. Han, S.~G{\"o}rtz, and R.~Zimmermann.
-\newblock \enquote{Improving Variable-Fidelity Surrogate Modeling via
-  Gradient-Enhanced Kriging and a Generalized Hybrid Bridge Function.}
-\newblock \emph{Aerospace Science and Technology} (2013).
-\newblock \urlprefix\url{https://arc.aiaa.org/doi/10.2514/1.J055842}.
-
-\bibitem{ulaganathan_gek}
-S.~Ulaganathan, I.~Couckuyt, T.~Dhaene, J.~Degroote, and E.~Laermans.
-\newblock \enquote{Performance study of gradient-enhanced Kriging.}
-\newblock \emph{Engineering with Computers} (2016).
-\newblock
-  \urlprefix\url{https://link.springer.com/article/10.1007/s00366-015-0397-y}.
+\bibitem{morris_derivatives}
+M.~D. Morris, T.~J. Mitchell, and D.~Ylvisaker.
+\newblock \enquote{Bayesian Design and Analysis of Computer Experiments: Use of
+  Derivatives in Surface Prediction.}
+\newblock \emph{Technometrics}, \textbf{volume~35}(3), pp. 243--255 (1993).
 
 \bibitem{backhaus_gek}
 J.~Backhaus, M.~Aulich, C.~Voss, and E.~Nicke.
 \newblock \enquote{Gradient Enhanced Surrogate Models Based on Adjoint {CFD}
   Methods for the Design of a Counter Rotating Turbofan.}
 \newblock In \emph{Proceedings of ASME Turbo Expo 2012} (2012).
-\newblock
-  \urlprefix\url{https://asmedigitalcollection.asme.org/GT/proceedings/GT2012/44748/2319/365305}.
+
+\bibitem{ulaganathan_gek}
+S.~Ulaganathan, I.~Couckuyt, T.~Dhaene, J.~Degroote, and E.~Laermans.
+\newblock \enquote{Performance study of gradient-enhanced {K}riging.}
+\newblock \emph{Engineering with Computers}, \textbf{volume~32}(1), pp. 15--34
+  (2016).
+
+\bibitem{han_wgek}
+Z.-H. Han, Y.~Zhang, C.-X. Song, and K.-S. Zhang.
+\newblock \enquote{Weighted Gradient-Enhanced Kriging for High-Dimensional
+  Surrogate Modeling and Design Optimization.}
+\newblock \emph{AIAA Journal}, \textbf{volume~55}(12), pp. 4330--4346 (2017).
+
+\bibitem{bouhlel_gek}
+M.~A. Bouhlel and J.~R. R.~A. Martins.
+\newblock \enquote{Gradient-enhanced kriging for high-dimensional problems.}
+\newblock \emph{Engineering with Computers}, \textbf{volume~35}(1), pp.
+  157--173 (2019).
 
 \bibitem{semler_weiser_gek}
 P.~Semler and M.~Weiser.
 \newblock \enquote{Adaptive Gradient Enhanced Gaussian Process Surrogates for
   Inverse Problems.} (2024).
 \newblock \urlprefix\url{https://arxiv.org/abs/2404.01864}.
+
+\bibitem{booth_gedgp}
+A.~S. Booth.
+\newblock \enquote{Gradient-enhancement and Gradient Predictions for Deep
+  Gaussian Process Modeling of Expensive Computer Experiments.} (2025).
+\newblock \urlprefix\url{https://arxiv.org/abs/2512.18066}.
+
+\bibitem{zimmermann_pod_gek}
+R.~Zimmermann.
+\newblock \enquote{Gradient-enhanced surrogate modeling based on proper
+  orthogonal decomposition.}
+\newblock \emph{Journal of Computational and Applied Mathematics},
+  \textbf{volume 237}(1), pp. 403--418 (2013).
+
+\bibitem{cacuci_sensitivity}
+D.~G. Cacuci.
+\newblock \enquote{Sensitivity theory for nonlinear systems. {I}. Nonlinear
+  functional analysis approach.}
+\newblock \emph{Journal of Mathematical Physics}, \textbf{volume~22}(12), pp.
+  2794--2802 (1981).
 
 \end{thebibliography}
