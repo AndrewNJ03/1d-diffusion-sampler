@@ -5,37 +5,37 @@ The style file: ANStopical.bst
 Database file #1: main.bib
 You've used 9 entries,
             2351 wiz_defined-function locations,
-            571 strings with 5742 characters,
-and the built_in function-call counts, 5174 in all, are:
+            571 strings with 5757 characters,
+and the built_in function-call counts, 5196 in all, are:
 = -- 443
-> -- 84
+> -- 87
 < -- 12
-+ -- 32
-- -- 23
-* -- 389
-:= -- 566
++ -- 33
+- -- 24
+* -- 391
+:= -- 569
 add.period$ -- 36
 call.type$ -- 9
 change.case$ -- 2
 chr.to.int$ -- 0
 cite$ -- 9
-duplicate$ -- 522
-empty$ -- 521
-format.name$ -- 29
-if$ -- 1160
+duplicate$ -- 524
+empty$ -- 522
+format.name$ -- 30
+if$ -- 1164
 int.to.chr$ -- 0
 int.to.str$ -- 9
-missing$ -- 76
+missing$ -- 77
 newline$ -- 51
 num.names$ -- 9
-pop$ -- 112
+pop$ -- 113
 preamble$ -- 1
 purify$ -- 0
 quote$ -- 0
 skip$ -- 123
 stack$ -- 0
 substring$ -- 512
-swap$ -- 288
+swap$ -- 290
 text.length$ -- 12
 text.prefix$ -- 0
 top$ -- 0
