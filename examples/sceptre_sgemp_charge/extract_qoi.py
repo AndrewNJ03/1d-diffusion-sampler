@@ -5,11 +5,6 @@ Computes the net SGEMP direct-drive charge
 
     q_net = Integral over the dielectric region of  E(r) . J(r) dr
 
-(guide: ../../../data/1322291.pdf, SAND2014-15576, Eq. 4.8) for each
-available case_*_forward_1d.csv in data/constantR_void_10/, and writes a
-small (void_thickness, q_net) table that gpr_scalar.py / ge_gpr_scalar.py
-consume.
-
 No pandas dependency, matching the rest of this repo's plain numpy/csv IO
 conventions (see sklearn_implementation/gpr_pod.py, examples/charge_deposition
 /coarse_gpr_delam.py).
@@ -250,8 +245,6 @@ def main(data_dir: Path = DATA_DIR, out_dir: Path = OUT_DIR):
     )
     print(f"\nWrote {out_path}  ({len(rows)} case(s))")
     print("-" * 64)
-    print("Reminder: only cases with a dumped CSV in data/constantR_void_10/ "
-          "are included above (2/11 planned cases as of this writing).")
 
     return table
 

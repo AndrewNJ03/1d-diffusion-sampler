@@ -5,20 +5,11 @@ The scalar QoI is q_net, the net SGEMP direct-drive charge (SAND2014-15576
 Eq. 4.8). Unlike examples/sceptre_sgemp_charge/extract_qoi.py, this does NOT
 integrate raw per-element angular flux -- the Sandia-side SCEPTRE toolchain
 already reduces each case down to a scalar and hands it back as
-response_1d in a per-sweep summary.csv:
-
-    data/constantR_void_1000_monoenergy/summary(1).csv           (p=1: void_thickness)
-    data/constantR_voidDielectricShield_1000_monoenergy/summary(2).csv (p=3: void/dielectric/shield)
-    data/constantR_void_100_pithon/summary.csv                    (p=1: void_thickness, Pithon spectrum)
+response_1d in a per-sweep summary.csv 
 
 response_1d == q_net (confirmed in examples/sceptre_sgemp_charge/
 gpr_scalar_void_sweep.py against the raw-flux integration on the original
 2-case pilot); response_2d is a different, currently-unused quantity.
-
-data/constantR_void_10/case_*_{forward,adjoint}_1d.csv is a *different*
-QoI (spatially-resolved / field, not scalar) and is out of scope here --
-see examples/sceptre_sgemp_charge/extract_qoi.py for that raw angular-flux
-integration path, which this module does not duplicate.
 
 This module writes output/qoi_<source>.txt tables per sweep
 (case_id, <param columns>, q_net) for downstream GPR / GE-GPR fitting.

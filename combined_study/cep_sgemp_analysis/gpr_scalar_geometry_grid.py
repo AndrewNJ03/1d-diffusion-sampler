@@ -3,9 +3,7 @@ gpr_scalar_geometry_grid.py — Standard-GPR learning curve on the 1000-case
 void/dielectric/shield thickness grid, q_net(void_thickness,
 dielectric_thickness, shield_thickness).
 
-Reads output/qoi_void_dielectric_shield_grid.txt (written by extract_qoi.py
-from data/constantR_voidDielectricShield_1000_monoenergy/summary(2).csv's
-response_1d column). Sibling of gpr_scalar_void_sweep.py, generalised from
+Sibling of gpr_scalar_void_sweep.py, generalised from
 p=1 to p=3 active geometry parameters. The underlying data is a full
 10x10x10 factorial grid (10 levels each), not a sparse design, so a genuine
 multi-parameter GPR fit is meaningful here.

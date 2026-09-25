@@ -2,8 +2,7 @@
 gpr_scalar_pithon_sweep.py — Standard-GPR learning curve on the 100-case
 void_thickness sweep with the Pithon x-ray spectrum, q_net(void_thickness).
 
-Reads output/qoi_void_sweep_pithon.txt (written by extract_qoi.py from
-data/constantR_void_100_pithon/summary.csv's response_1d column). Sibling
+Sibling
 of gpr_scalar_void_sweep.py (same monoenergetic-source void sweep, but with
 the Pithon-spectrum cross-section library and 1/10th the cases), so the
 same fit can be compared source-spectrum-to-source-spectrum. No precedent

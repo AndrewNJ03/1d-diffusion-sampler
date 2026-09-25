@@ -13,8 +13,7 @@ quantity extract_qoi.py::compute_net_charge computes for the original
 2-case pilot; response_2d is a different, currently-unused quantity).
 
 Standard GPR only -- no GE-GPR here. This dataset has no adjoint/gradient
-column, and per-project decision, wiring the real SCEPTRE adjoint (see
-data/constantR_void_10/case_*_adjoint_1d.csv) into GE-GPR is deferred to
+column, and per-project decision, wiring the real SCEPTRE adjoint into GE-GPR is deferred to
 the December review; this script establishes the plain-GPR accuracy
 baseline in the meantime.
 """

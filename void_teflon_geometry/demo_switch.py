@@ -7,9 +7,7 @@ Uses:
   - void_teflon_geometry/geometry.py : void_teflon_field(), solve_void_teflon()
                                         (smooth switch, this module)
 
-Geometry constants below match data/constantR_void_10/void.py /
-case_key.txt (core_radius, shield_thickness, and the fixed void+dielectric
-shell width). No CSV data is read here — this only exercises the ROM
+No CSV data is read here — this only exercises the ROM
 sandbox's own solver with the new geometry parameterization.
 """
 
@@ -29,7 +27,7 @@ from geometry import void_teflon_field, solve_void_teflon
 from plotting import draw_material_boundaries
 
 # ------------------------------------------------------------------ #
-# Geometry (matches data/constantR_void_10/void.py)                  #
+# Geometry                                                           #
 # ------------------------------------------------------------------ #
 L                 = 1.0
 core_radius       = 0.16921

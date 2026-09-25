@@ -2,8 +2,6 @@
 gpr_scalar_void_sweep.py — Standard-GPR learning curve on the 999-case
 void_thickness sweep, q_net(void_thickness).
 
-Reads output/qoi_void_sweep.txt (written by extract_qoi.py from
-data/constantR_void_1000_monoenergy/summary(1).csv's response_1d column).
 Sibling of examples/sceptre_sgemp_charge/gpr_scalar_void_sweep.py, updated
 to go through this project's extract_qoi.py output rather than reading the
 raw summary.csv directly.
