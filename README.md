@@ -94,6 +94,7 @@ $\varepsilon_\text{proj}$ is limited by the POD basis, not by the GP.
 | `gpr_vs_gegpr_comparison/` | GE-GPR vs. standard GPR, one parameter active at a time (5 studies) | [gpr_vs_gegpr_comparison/README.md](gpr_vs_gegpr_comparison/README.md) |
 | `combined_study/` | All 5 parameters active at once, plus a 5-seed repeatability run | [combined_study/README.md](combined_study/README.md) |
 | `combined_study/cep_sgemp_analysis/` | Standard-GPR baselines on the pre-reduced SCEPTRE SGEMP sweeps | [combined_study/cep_sgemp_analysis/README.md](combined_study/cep_sgemp_analysis/README.md) |
+| `sn_transport/` | 1D slab S_N transport (DD, exact uncollided beam), adjoint gradients of exiting currents, and Bayesian inverse UQ of $(\Sigma_t, c)$ for a Shield/Dielectric/Core slab | [sn_transport/README.md](sn_transport/README.md) |
 | `examples/` | Early exploratory scripts (single-layer sweeps, POD sensitivity study) and two SCEPTRE sub-projects | [examples/README.md](examples/README.md) |
 | `latex_paper/` | ANS M&C 2027 paper source | [latex_paper/README.md](latex_paper/README.md) |
 | `output_graphs_compare/` | Output of `compare.py` (legacy PyTorch vs. scikit-learn GPR comparison); no source | (this file, §6) |
