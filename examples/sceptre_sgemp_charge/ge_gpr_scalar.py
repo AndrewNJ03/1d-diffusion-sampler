@@ -1,12 +1,17 @@
 """
-ge_gpr_scalar.py — Gradient-enhanced GPR surrogate for q_net(void_thickness).
+ge_gpr_scalar.py — Gradient-enhanced GPR surrogate for the SGEMP charge q(void_thickness).
 
 Reuses GEGaussianProcess from sklearn_implementation/ge_gpr.py unmodified.
-This external SCEPTRE solver has no adjoint/sensitivity output (only forward
-flux dumps), so the gradient dq_net/d(void_thickness) fed to GE-GPR is a
-finite-difference approximation (np.gradient across the sorted training
-cases) -- a rough placeholder, explicitly noted, valid until more cases are
-generated and/or a real sensitivity source becomes available.
+
+gradient_source="adjoint" (default): values and gradients both come from
+void_sensitivity.py's output/qoi_void_adjoint.txt, i.e. q = <Q+, psi> and the
+adjoint-form dq/dt_v in case_key units. Values and gradients must describe the
+same functional, so extract_qoi.py's q_net is NOT used on this path. Cases
+without an adjoint flux dump (NaN gradient) are dropped.
+
+gradient_source="fd": the old placeholder. q_net from extract_qoi.py's
+output/qoi_scalar.txt with np.gradient across the sorted cases. Only for
+checking the pipeline when no adjoint dumps exist.
 """
 
 import os
@@ -28,8 +33,6 @@ from gpr_scalar import load_qoi_table, _make_kernel
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "sklearn_implementation"))
 from ge_gpr import GEGaussianProcess  # noqa: E402
 
-N_PLANNED_CASES = 11
-
 
 def finite_difference_gradient(X: np.ndarray, y: np.ndarray):
     """
@@ -47,21 +50,53 @@ def finite_difference_gradient(X: np.ndarray, y: np.ndarray):
     return dy_dx
 
 
-def main(n_restarts: int = 10, out_dir: Path = OUT_DIR):
+def load_adjoint_table(path: Path = None, identity_tol: float = 0.05):
+    """
+    Read void_sensitivity.py's qoi_void_adjoint.txt.
+    Returns case_ids, X (M, 1) void thickness, q (M,), dq/dt_v (M,), keeping
+    only cases with a finite adjoint gradient whose boundary identity matches
+    q to identity_tol (a failed identity means the gradient is not trustworthy).
+    """
+    path = Path(path) if path is not None else OUT_DIR / "qoi_void_adjoint.txt"
+    table = np.atleast_2d(np.loadtxt(path, comments="#"))
+    if table.shape[1] < 7:
+        raise ValueError(f"{path} predates the case_key unit conversion; rerun void_sensitivity.py")
+    has_grad = np.isfinite(table[:, 5])
+    with np.errstate(invalid="ignore"):
+        ok_identity = np.abs(table[:, 3] - table[:, 2]) <= identity_tol * np.abs(table[:, 2])
+    for mask, why in ((~has_grad, "no adjoint gradient"),
+                      (has_grad & ~ok_identity, f"boundary identity off by > {identity_tol:.0%}")):
+        if mask.any():
+            print(f"Dropping {int(mask.sum())} case(s), {why}: {table[mask, 0].astype(int).tolist()}")
+    table = table[has_grad & ok_identity]
+    return table[:, 0].astype(int), table[:, 1:2], table[:, 2], table[:, 5]
+
+
+def main(n_restarts: int = 10, out_dir: Path = OUT_DIR, gradient_source: str = "adjoint",
+         table_path: Path = None):
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
     print("=" * 60)
-    print("GE-GPR (finite-difference gradients) — scalar SGEMP charge QoI")
+    print(f"GE-GPR ({gradient_source} gradients) — scalar SGEMP charge QoI")
     print("=" * 60)
 
-    case_ids, X, y = load_qoi_table()
+    if gradient_source == "adjoint":
+        case_ids, X, y, dy_dx_phys = load_adjoint_table(table_path)
+        qlabel = r"$q = \langle Q^\dagger, \psi\rangle$"
+    elif gradient_source == "fd":
+        case_ids, X, y = load_qoi_table(table_path)
+        dy_dx_phys = finite_difference_gradient(X, y)
+        qlabel = r"$q_{\mathrm{net}}$"
+    else:
+        raise ValueError("gradient_source must be 'adjoint' or 'fd'")
     M = len(y)
+    if M < 2:
+        raise ValueError(f"need at least 2 cases with values and gradients, got {M}")
+    if len(np.unique(X[:, 0])) < M:
+        raise ValueError("duplicate void thicknesses in the training set")
     print(f"Loaded M = {M} case(s): {case_ids.tolist()}")
-    if M < N_PLANNED_CASES:
-        print(f"NOTE: only {M}/{N_PLANNED_CASES} planned cases have a dumped CSV -- "
-              f"the finite-difference gradient below is a rough placeholder "
-              f"until more cases exist (or a real sensitivity/adjoint source is used).")
+    print(f"dq/d(void_thickness) = {dy_dx_phys}")
 
     x_scaler = StandardScaler()
     X_norm = x_scaler.fit_transform(X)
@@ -71,9 +106,6 @@ def main(n_restarts: int = 10, out_dir: Path = OUT_DIR):
     if y_sd == 0.0:
         y_sd = 1.0
     y_z = (y - y_mu) / y_sd
-
-    dy_dx_phys = finite_difference_gradient(X, y)
-    print(f"Finite-difference dq_net/d(void_thickness) = {dy_dx_phys}")
 
     # Chain rule to the (standardised y) / (StandardScaler-normalised x) space:
     #   dz/dx_norm = (dy/dx_phys) * scale_X / y_sd
@@ -118,8 +150,8 @@ def main(n_restarts: int = 10, out_dir: Path = OUT_DIR):
         ax.annotate(f"C{cid}", (xi, yi), xytext=(4, 4),
                      textcoords="offset points", fontsize=8, color="dimgray")
     ax.set_xlabel("void_thickness")
-    ax.set_ylabel(r"$q_{\mathrm{net}}$")
-    ax.set_title(f"GE-GPR vs Std GPR — SGEMP net charge  (M={M})")
+    ax.set_ylabel(qlabel)
+    ax.set_title(f"GE-GPR vs Std GPR — SGEMP charge, {gradient_source} gradients  (M={M})")
     ax.legend(fontsize=9)
     ax.grid(True, ls="--", alpha=0.4)
     plt.tight_layout()
@@ -133,4 +165,5 @@ def main(n_restarts: int = 10, out_dir: Path = OUT_DIR):
 
 
 if __name__ == "__main__":
-    main()
+    # python3 ge_gpr_scalar.py [adjoint|fd]
+    main(gradient_source=sys.argv[1] if len(sys.argv) > 1 else "adjoint")
