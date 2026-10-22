@@ -16,6 +16,8 @@ $q_\text{net}$ on the coaxial Core/Void/Teflon/Shield geometry that
 | `ge_gpr_scalar.py` | GE-GPR on the pilot table with a finite-difference gradient |
 | `gpr_scalar_void_sweep.py` | Learning curve, 999-case $t_v$ sweep, reading `summary(1).csv` directly |
 | `gpr_scalar_geometry_grid.py` | Learning curve, 1000-case $10^3$ thickness grid, reading `summary(2).csv` directly |
+| `void_sensitivity.py` | Adjoint derivative $dq/dt_v$ from forward + adjoint flux dumps of `constantR_void_10`; writes `output/qoi_void_adjoint.txt` |
+| `verify_void_sensitivity.py` | Checks the $dq/dt_v$ formula against finite differences on a synthetic S_N slab (`sn_transport/`) |
 
 ---
 
@@ -150,7 +152,43 @@ third sweep (Pithon spectrum). Its `extract_qoi.py` only selects columns from
 `summary.csv`; the flux integration exists only here. The two sets of
 learning curves agree to about six significant digits.
 
-## 5. Running
+## 5. Adjoint derivative with respect to void thickness
+
+`void_sensitivity.py` computes $dq/dt_v$ at fixed outer radius from each case's
+forward flux, adjoint source (`case_*_adjoint_1d.csv`) and adjoint flux
+(`case_*_adjoint_flux_1d.csv`, same column layout as the forward dump; rename
+`ADJOINT_FLUX_PATTERN` if the files are named differently).
+
+**The functional is the adjoint source's, not §1's.** In cases 0000 and 0001
+the adjoint source is $c\,\mu_a$ on electron groups with $c=\mp0.443896$
+(left/right half), uniform over void *and* dielectric, independent of $t_v$,
+plus one-element spikes in the shield and core elements bordering the gap. So
+$q=\langle Q^\dagger,\psi\rangle$ is 4.49e-8 and 2.12e-8 for those cases, against
+3.18e-8 and 2.52e-8 from `extract_qoi.py`. GE-GPR values and gradients must
+both use $q=\langle Q^\dagger,\psi\rangle$.
+
+**Formula.** Growing $t_v$ turns a thin dielectric layer at each void/dielectric
+interface $x_i$ into void. With $L=\mu\,\partial_x+H$, $H$ local in $x$, and no
+forward source near $x_i$, the adjoint equation removes all cross sections:
+
+$$
+\frac{dq}{dt_v}=\sum_i\sum_{g,a}w_a\,\psi_{g,a}\,\mu_a\Big(\partial_x\psi^\dagger_{g,a}\big|_\text{diel}-\partial_x\psi^\dagger_{g,a}\big|_\text{void}\Big)\Big|_{x_i}.
+$$
+
+The derivatives are the streaming integrals of the elements touching $x_i$,
+including the upwind face jump. A forward-flux form is also reported as a
+diagnostic. The script also reports $q$ from the adjoint side,
+$\sum_\text{incoming}w|\mu|\psi^\dagger\psi_\text{in}$, under both angle conventions
+for the adjoint dump, and uses the one that matches.
+
+**Verification** (`verify_void_sensitivity.py`, one-group DD S16, two
+synthetic cases): the adjoint form matches central finite differences in $t_v$
+to about 5e-8 at 25–400 cells/cm; the forward form converges at first order
+(5% to 0.3%). This checks the formula and the code, not the transport solve's
+discretization: its dumps are discontinuous, so a finite-difference check on
+real runs at $t_v\pm\delta$ is still required.
+
+## 6. Running
 
 `gpr_scalar.py` and `ge_gpr_scalar.py` import `extract_qoi` and `gpr_scalar`
 by bare name, so run them from this directory:
@@ -162,6 +200,8 @@ python3 gpr_scalar.py
 python3 ge_gpr_scalar.py
 python3 gpr_scalar_void_sweep.py
 python3 gpr_scalar_geometry_grid.py
+python3 verify_void_sensitivity.py
+python3 void_sensitivity.py
 ```
 
 Data paths are resolved relative to the files, as `../../../data/...`
