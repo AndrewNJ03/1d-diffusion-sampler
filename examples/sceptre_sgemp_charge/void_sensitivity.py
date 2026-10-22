@@ -85,6 +85,8 @@ ADJOINT_SOURCE_PATTERN = "case_{:04d}_adjoint_1d.csv"
 # with the adjoint flux in the left/right value columns. Rename to match the
 # files when they arrive.
 ADJOINT_FLUX_PATTERN = "case_{:04d}_adjoint_flux_1d.csv"
+# Relative tolerance on q from the boundary identity vs. q = <Q+, psi>.
+IDENTITY_TOL = 0.05
 
 
 # --------------------------------------------------------------------------- #
@@ -131,6 +133,12 @@ def load_nodal_field(path: Path) -> NodalField:
     if np.any(np.diff(x_left) <= 0):
         raise ValueError(f"{path.name}: elements are not ordered by x")
     return NodalField(x_left, x_right, block, left, right)
+
+
+def rescale_x(field: NodalField, factor: float) -> NodalField:
+    """Same values on the mesh x -> factor * x."""
+    return NodalField(field.x_left * factor, field.x_right * factor, field.block,
+                      field.left, field.right)
 
 
 def same_mesh(a: NodalField, b: NodalField) -> bool:
@@ -262,6 +270,23 @@ def _gap_source_level(src: NodalField, mu: np.ndarray) -> float:
     return float(vals[vals > 0].mean())
 
 
+def dump_length_per_key_length(field: NodalField, t_v_key: float, cid: int = -1) -> float:
+    """
+    s = (void width in the dump's x) / (Void_Thickness in case_key.txt), per side.
+
+    The dumps may be on a normalised domain (x in [0,1]) while case_key.txt is
+    physical. main() divides the dump x by s, so q, the boundary identity and
+    dq/dt_v are all computed on a mesh in case_key units. s = 1 if the units
+    already agree. Raises if the two voids differ in width.
+    """
+    w_l = float(field.h[field.block == BLOCK_VOID_L].sum())
+    w_r = float(field.h[field.block == BLOCK_VOID_R].sum())
+    if not np.isclose(w_l, w_r, rtol=1e-6):
+        raise ValueError(f"case {cid}: left/right void widths differ in the dump "
+                         f"({w_l:.8g} vs {w_r:.8g}); the formula assumes both grow together")
+    return 0.5 * (w_l + w_r) / t_v_key
+
+
 def main(data_dir: Path = DATA_DIR, out_dir: Path = OUT_DIR, adjoint_angles_reversed=None):
     """
     adjoint_angles_reversed: None picks the convention whose boundary identity
@@ -276,7 +301,7 @@ def main(data_dir: Path = DATA_DIR, out_dir: Path = OUT_DIR, adjoint_angles_reve
     print("dq/dt_v from forward + adjoint dumps (fixed outer radius)")
     print("=" * 72)
 
-    rows, gap_levels = [], []
+    rows, gap_levels, scales = [], [], []
     for cid in sorted(case_key):
         f_path = data_dir / FORWARD_PATTERN.format(cid)
         s_path = data_dir / ADJOINT_SOURCE_PATTERN.format(cid)
@@ -289,14 +314,19 @@ def main(data_dir: Path = DATA_DIR, out_dir: Path = OUT_DIR, adjoint_angles_reve
         fwd, src = load_nodal_field(f_path), load_nodal_field(s_path)
         if not same_mesh(fwd, src):
             raise ValueError(f"case {cid}: forward and adjoint-source meshes differ")
+        # Put the mesh in case_key units so dq/dt_v comes out per unit Void_Thickness.
+        s = dump_length_per_key_length(fwd, t_v, cid)
+        scales.append(s)
+        fwd, src = rescale_x(fwd, 1.0 / s), rescale_x(src, 1.0 / s)
         q = charge_functional(fwd, src, w)
         gap_levels.append(_gap_source_level(src, mu))
         print(f"\nCase {cid:04d}  t_v = {t_v:.6g}")
-        print(f"  q = <Q+, psi>               = {q:.6e}")
+        print(f"  dump void width / t_v       = {s:.6g}  (dump x per case_key length unit)")
+        print(f"  q = <Q+, psi>               = {q:.6e}   (mesh in case_key units)")
 
         q_adj = dq_f = dq_a = np.nan
         if a_path.exists():
-            adj = load_nodal_field(a_path)
+            adj = rescale_x(load_nodal_field(a_path), 1.0 / s)
             if not same_mesh(fwd, adj):
                 raise ValueError(f"case {cid}: forward and adjoint meshes differ")
             q_same = boundary_functional(fwd, adj, mu, w)
@@ -308,10 +338,14 @@ def main(data_dir: Path = DATA_DIR, out_dir: Path = OUT_DIR, adjoint_angles_reve
             if reverse:
                 adj = reverse_angles(adj, mu)
             q_adj = q_rev if reverse else q_same
+            if abs(q_adj - q) > IDENTITY_TOL * abs(q):
+                print(f"  WARNING: boundary identity misses q by {abs(q_adj - q) / abs(q):.1%}. "
+                      "The x units, the adjoint dump, or the source assumption is wrong; "
+                      "do not use this case's gradient.")
 
             sens = void_thickness_sensitivity(fwd, adj, src, mu, w)
             dq_f, dq_a = sens["forward_form"], sens["adjoint_form"]
-            print(f"  dq/dt_v forward form        = {dq_f:.6e}")
+            print(f"  dq/dt_v forward form        = {dq_f:.6e}   (case_key units)")
             print(f"  dq/dt_v adjoint form        = {dq_a:.6e}   "
                   f"(forms differ by {abs(dq_f - dq_a) / max(abs(dq_a), 1e-300):.1%})")
             for k, it in enumerate(sens["interfaces"]):
@@ -319,17 +353,24 @@ def main(data_dir: Path = DATA_DIR, out_dir: Path = OUT_DIR, adjoint_angles_reve
                       f"operator fwd {it['operator_forward']:+.3e}, adj {it['operator_adjoint']:+.3e}")
         else:
             print(f"  [no adjoint solution: {a_path.name}]")
-        rows.append((cid, t_v, q, q_adj, dq_f, dq_a))
+        rows.append((cid, t_v, q, q_adj, dq_f, dq_a, s))
 
     if len(gap_levels) > 1 and np.ptp(gap_levels) > 1e-8 * max(gap_levels):
         print("\nWARNING: the adjoint source in the gap changes between cases, so Q+ depends "
               "on t_v and the derivative is missing a <dQ+/dt_v, psi> term.")
+    if len(scales) > 1 and np.ptp(scales) > 1e-3 * np.mean(scales):
+        print("\nWARNING: dump void width / t_v varies between cases "
+              f"({min(scales):.6g} to {max(scales):.6g}). Either case_key.txt does not match "
+              "the dumps, or each case is normalised by a different total length, in which "
+              "case q itself is not comparable across cases.")
 
     table = np.array(rows, dtype=float)
     out_path = out_dir / "qoi_void_adjoint.txt"
     np.savetxt(out_path, table,
-               header="case_id void_thickness q q_adjoint_boundary dq_dtv_forward_form dq_dtv_adjoint_form",
-               fmt=["%d"] + ["%.8e"] * 5)
+               header="case_id void_thickness q q_adjoint_boundary dq_dtv_forward_form "
+                      "dq_dtv_adjoint_form dump_per_key_length\n"
+                      "dq_dtv_* are per unit of case_key Void_Thickness",
+               fmt=["%d"] + ["%.8e"] * 6)
     print(f"\nWrote {out_path}  ({len(rows)} case(s))")
     return table
 

@@ -5,7 +5,8 @@ $q_\text{net}$ on the coaxial Core/Void/Teflon/Shield geometry that
 `void_teflon_geometry/` models with diffusion. It has two parts:
 
 1. a **pilot** that computes $q_\text{net}$ from raw SCEPTRE angular-flux dumps
-   (2 cases) and fits GPR and a finite-difference GE-GPR to them;
+   (2 cases) and fits GPR and GE-GPR to them, with adjoint gradients from §5
+   (or a finite-difference placeholder);
 2. **learning curves** on the pre-reduced 999-case and 1000-case sweeps, which
    are duplicated in `combined_study/cep_sgemp_analysis/` (see §4).
 
@@ -13,7 +14,7 @@ $q_\text{net}$ on the coaxial Core/Void/Teflon/Shield geometry that
 |---|---|
 | `extract_qoi.py` | Raw angular flux → electron current → $q_\text{net}$ for each `case_*_forward_1d.csv`; writes `output/qoi_scalar.txt` |
 | `gpr_scalar.py` | Standard GPR on the pilot table |
-| `ge_gpr_scalar.py` | GE-GPR on the pilot table with a finite-difference gradient |
+| `ge_gpr_scalar.py` | GE-GPR on $q=\langle Q^\dagger,\psi\rangle$ with adjoint $dq/dt_v$ from `output/qoi_void_adjoint.txt` (default), or on $q_\text{net}$ with a finite-difference gradient (`fd`) |
 | `gpr_scalar_void_sweep.py` | Learning curve, 999-case $t_v$ sweep, reading `summary(1).csv` directly |
 | `gpr_scalar_geometry_grid.py` | Learning curve, 1000-case $10^3$ thickness grid, reading `summary(2).csv` directly |
 | `void_sensitivity.py` | Adjoint derivative $dq/dt_v$ from forward + adjoint flux dumps of `constantR_void_10`; writes `output/qoi_void_adjoint.txt` |
@@ -109,14 +110,17 @@ $q_\text{net}$ computed on the Sandia side.
 that the pipeline runs.
 
 **`ge_gpr_scalar.py`**: `GEGaussianProcess` from
-`sklearn_implementation/ge_gpr.py` with one active input. The gradient
-$dq_\text{net}/dt_v$ comes from `np.gradient` on the sorted cases (central
-differences inside, one-sided at the ends). With two cases it is the same
-secant slope at both points. It is scaled like the adjoint gradients in the
-diffusion code:
+`sklearn_implementation/ge_gpr.py` with one active input. By default
+(`python3 ge_gpr_scalar.py`, or `adjoint`) the values and gradients both come
+from `output/qoi_void_adjoint.txt` (§5): $q=\langle Q^\dagger,\psi\rangle$ and
+the adjoint-form $dq/dt_v$, so both describe the same functional. Cases with no
+adjoint flux dump, or whose boundary identity misses $q$ by more than 5%, are
+dropped and listed. `python3 ge_gpr_scalar.py fd` is the old placeholder: $q_\text{net}$
+from `output/qoi_scalar.txt` with `np.gradient` on the sorted cases. Either
+gradient is scaled like the adjoint gradients in the diffusion code:
 
 $$
-\frac{\partial z}{\partial x_\text{norm}} = \frac{dq_\text{net}}{dt_v}\cdot\frac{s_x}{s_q},
+\frac{\partial z}{\partial x_\text{norm}} = \frac{dq}{dt_v}\cdot\frac{s_x}{s_q},
 $$
 
 with $s_x$ the `StandardScaler` scale and $s_q$ the output standard deviation.
@@ -179,7 +183,23 @@ The derivatives are the streaming integrals of the elements touching $x_i$,
 including the upwind face jump. A forward-flux form is also reported as a
 diagnostic. The script also reports $q$ from the adjoint side,
 $\sum_\text{incoming}w|\mu|\psi^\dagger\psi_\text{in}$, under both angle conventions
-for the adjoint dump, and uses the one that matches.
+for the adjoint dump, and uses the one that matches. If neither matches
+$q$ to 5% it prints a warning, and `ge_gpr_scalar.py` drops that case.
+
+**Units.** The dumps' $x$ may be normalised (§1: $x\in[0,1]$) while
+`case_key.txt` is physical. The script measures the void width in the dump,
+divides it by `Void_Thickness` to get $s$ (dump length per case_key length,
+column `dump_per_key_length`), and rescales the mesh by $1/s$ before computing
+anything. So $q$, the boundary identity and $dq/dt_v$ are all in case_key
+units. This matters: on synthetic dumps with $x$ normalised by a 4 cm domain,
+skipping the rescale gives $q$ off by 4×, gradients off by 2–4×, and the
+angle-convention test picks the wrong convention. With it, the boundary
+identity holds to 1e-15 and $dq/dt_v$ matches central finite differences to
+3e-8. The boundary identity only holds when the mesh is in the units the
+transport solve used, so it also checks the case_key units. A warning is
+printed if $s$ varies between cases (constant outer radius means it should
+not). The $q$ values quoted above for cases 0000 and 0001 were computed on the
+dump mesh and change by $1/s$.
 
 **Verification** (`verify_void_sensitivity.py`, one-group DD S16, two
 synthetic cases): the adjoint form matches central finite differences in $t_v$
@@ -197,11 +217,12 @@ by bare name, so run them from this directory:
 cd examples/sceptre_sgemp_charge
 python3 extract_qoi.py
 python3 gpr_scalar.py
-python3 ge_gpr_scalar.py
+python3 void_sensitivity.py      # writes output/qoi_void_adjoint.txt
+python3 ge_gpr_scalar.py         # adjoint values + gradients (default)
+python3 ge_gpr_scalar.py fd      # q_net + finite-difference placeholder
 python3 gpr_scalar_void_sweep.py
 python3 gpr_scalar_geometry_grid.py
 python3 verify_void_sensitivity.py
-python3 void_sensitivity.py
 ```
 
 Data paths are resolved relative to the files, as `../../../data/...`
