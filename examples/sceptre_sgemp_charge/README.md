@@ -12,12 +12,14 @@ $q_\text{net}$ on the coaxial Core/Void/Teflon/Shield geometry that
 
 | File | Role |
 |---|---|
+| `exodus_to_csv.py` | SCEPTRE Exodus `psi_g_0_a_0_n` element variables → the per-element CSVs below (forward, adjoint flux, optionally adjoint source); single-file, `--list` and `--batch` modes |
 | `extract_qoi.py` | Raw angular flux → electron current → $q_\text{net}$ for each `case_*_forward_1d.csv`; writes `output/qoi_scalar.txt` |
 | `gpr_scalar.py` | Standard GPR on the pilot table |
 | `ge_gpr_scalar.py` | GE-GPR on $q=\langle Q^\dagger,\psi\rangle$ with adjoint $dq/dt_v$ from `output/qoi_void_adjoint.txt` (default), or on $q_\text{net}$ with a finite-difference gradient (`fd`) |
 | `gpr_scalar_void_sweep.py` | Learning curve, 999-case $t_v$ sweep, reading `summary(1).csv` directly |
 | `gpr_scalar_geometry_grid.py` | Learning curve, 1000-case $10^3$ thickness grid, reading `summary(2).csv` directly |
 | `void_sensitivity.py` | Adjoint derivative $dq/dt_v$ from forward + adjoint flux dumps of `constantR_void_10`; writes `output/qoi_void_adjoint.txt` |
+| `diagnose_identity.py` | Per-case checks behind the boundary identity (incoming current, adjoint vacuum faces, units, $Q^\dagger\psi$ by block) |
 | `verify_void_sensitivity.py` | Checks the $dq/dt_v$ formula against finite differences on a synthetic S_N slab (`sn_transport/`) |
 
 ---
@@ -114,8 +116,9 @@ that the pipeline runs.
 (`python3 ge_gpr_scalar.py`, or `adjoint`) the values and gradients both come
 from `output/qoi_void_adjoint.txt` (§5): $q=\langle Q^\dagger,\psi\rangle$ and
 the adjoint-form $dq/dt_v$, so both describe the same functional. Cases with no
-adjoint flux dump, or whose boundary identity misses $q$ by more than 5%, are
-dropped and listed. `python3 ge_gpr_scalar.py fd` is the old placeholder: $q_\text{net}$
+adjoint flux dump, or whose boundary identity failed (status 2, §5), are
+dropped and listed; cases the identity cannot check (status 1) are kept and
+listed. `python3 ge_gpr_scalar.py fd` is the old placeholder: $q_\text{net}$
 from `output/qoi_scalar.txt` with `np.gradient` on the sorted cases. Either
 gradient is scaled like the adjoint gradients in the diffusion code:
 
@@ -181,25 +184,42 @@ $$
 
 The derivatives are the streaming integrals of the elements touching $x_i$,
 including the upwind face jump. A forward-flux form is also reported as a
-diagnostic. The script also reports $q$ from the adjoint side,
-$\sum_\text{incoming}w|\mu|\psi^\dagger\psi_\text{in}$, under both angle conventions
-for the adjoint dump, and uses the one that matches. If neither matches
-$q$ to 5% it prints a warning, and `ge_gpr_scalar.py` drops that case.
+diagnostic.
 
-**Units.** The dumps' $x$ may be normalised (§1: $x\in[0,1]$) while
-`case_key.txt` is physical. The script measures the void width in the dump,
-divides it by `Void_Thickness` to get $s$ (dump length per case_key length,
-column `dump_per_key_length`), and rescales the mesh by $1/s$ before computing
-anything. So $q$, the boundary identity and $dq/dt_v$ are all in case_key
-units. This matters: on synthetic dumps with $x$ normalised by a 4 cm domain,
-skipping the rescale gives $q$ off by 4×, gradients off by 2–4×, and the
-angle-convention test picks the wrong convention. With it, the boundary
-identity holds to 1e-15 and $dq/dt_v$ matches central finite differences to
-3e-8. The boundary identity only holds when the mesh is in the units the
-transport solve used, so it also checks the case_key units. A warning is
-printed if $s$ varies between cases (constant outer radius means it should
-not). The $q$ values quoted above for cases 0000 and 0001 were computed on the
-dump mesh and change by $1/s$.
+**Angle convention.** The adjoint must vanish on the outer faces in the
+directions where the forward flux leaves ($\mu<0$ on the left, $\mu>0$ on the
+right). The script measures that leak under both angle orders and uses the one
+that vanishes. This does not depend on units or sources.
+
+**Units.** $s$ is the dump's void width divided by `Void_Thickness`
+(column `dump_per_key_length`). The interface formula gives $dq/dx_i$ per dump
+length and the void moves $s$ dump lengths per unit $t_v$, so
+$dq/dt_v = s\,dq/dx_i$ is per unit `Void_Thickness` **whatever units the solve
+used**. Only $q=\int Q^\dagger\psi\,dx$ depends on them: it must be integrated in
+the solve's length unit. With `q_mesh="auto"` (default) the boundary identity
+picks the dump mesh or the case_key mesh when it applies, and otherwise the dump
+mesh, which is right whenever the CSVs carry SCEPTRE's own coordinates (e.g.
+from `exodus_to_csv.py`). Force it with `python3 void_sensitivity.py DATA_DIR
+dump` or `... case_key`. The earlier version always used the case_key mesh,
+which puts $q$ off by $1/s$ (and fails the identity on every case) when the dumps
+are in SCEPTRE's units and case_key is not.
+
+**Boundary identity**, $q=\sum_\text{incoming}w|\mu|\psi^\dagger\psi_\text{in}$:
+a check, not an input. Status per case in column 8:
+
+| status | meaning | used by GE-GPR |
+|---|---|---|
+| 0 | forward flux enters through the faces and the identity matches $q$ to 5% | yes |
+| 1 | no forward flux enters through the faces (internal source): the identity is $0$ and checks nothing | yes, listed |
+| 2 | flux enters but the identity misses on both meshes: forward volume source as well, an adjoint of a different problem, or angle mismatch | no |
+
+On synthetic dumps, the gradient and $q$ are exact (to 3e-8 against finite
+differences) for: $x$ normalised after the solve (identity picks the case_key
+mesh), dumps in solve units with case_key in other units (picks the dump mesh),
+and an internal source away from the gap (status 1). A perturbed adjoint is
+caught as status 2. `diagnose_identity.py [DATA_DIR]` prints the separate
+checks (incoming currents, vacuum leak, $Q^\dagger\psi$ by block and particle,
+boundary term per face and on each mesh) when a case fails.
 
 **Verification** (`verify_void_sensitivity.py`, one-group DD S16, two
 synthetic cases): the adjoint form matches central finite differences in $t_v$
@@ -208,16 +228,54 @@ to about 5e-8 at 25–400 cells/cm; the forward form converges at first order
 discretization: its dumps are discontinuous, so a finite-difference check on
 real runs at $t_v\pm\delta$ is still required.
 
-## 6. Running
+## 6. From Exodus to CSV
+
+`exodus_to_csv.py` reads element variables named `psi_g_0_a_0_n` (group $g$,
+1-based in SCEPTRE; angle $a$, 0–7; local node $n$ of the 2-node element) on
+any number of blocks. It maps node 0/1 to left/right by coordinate, orders
+elements by $x$, and writes the 11-column CSV the loaders read: `elem_id,
+block_id, exodus_elem, time, x_left, x_right, x_center, energy_group,
+angle_idx, left_value, right_value`. Columns 7–8 are where the hand-made dumps
+had them (with the header now labelled correctly). By default it dumps the last
+time step (`--step`).
+
+It refuses rather than guesses when: a `psi` variable is missing, the 2nd/4th
+indices are nonzero, the elements are not 2-node, the elements do not tile one
+interval, or a variable is absent from a block in the truth table (unless
+`--missing-as-zero`, which batch mode uses for the adjoint source only).
+
+```bash
+python3 exodus_to_csv.py --list some_case.exo        # see the variable families
+python3 exodus_to_csv.py --batch ../../../data/constantR_void_10 \
+    --forward "<forward name>_{:04d}.exo" --adjoint "<adjoint name>_{:04d}.exo" \
+    [--adjoint-source-prefix <Q+ prefix>]
+```
+
+The patterns are Python format strings of the case id from `case_key.txt`.
+Batch mode writes `case_XXXX_forward_1d.csv`, `case_XXXX_adjoint_flux_1d.csv`
+and, with `--adjoint-source-prefix`, `case_XXXX_adjoint_1d.csv`. The reader is
+`netCDF4` if installed, else `scipy.io.netcdf_file` (classic and 64-bit-offset
+files only).
+
+**Tested** on synthetic Exodus files (38 groups, 8 angles, blocks stored out of
+$x$ order, shuffled node numbering, 40% of elements with reversed connectivity,
+two time steps, adjoint source only on the gap blocks): the CSVs reproduce the
+written fields to 5e-12, and through `void_sensitivity.py` the boundary
+identity holds to 1e-11 and $dq/dt_v$ matches central finite differences to
+3e-8 on all 10 cases.
+
+## 7. Running
 
 `gpr_scalar.py` and `ge_gpr_scalar.py` import `extract_qoi` and `gpr_scalar`
 by bare name, so run them from this directory:
 
 ```bash
 cd examples/sceptre_sgemp_charge
+python3 exodus_to_csv.py --batch ...   # §6, once per data set
 python3 extract_qoi.py
 python3 gpr_scalar.py
-python3 void_sensitivity.py      # writes output/qoi_void_adjoint.txt
+python3 void_sensitivity.py      # writes output/qoi_void_adjoint.txt ([DATA_DIR] [auto|dump|case_key])
+python3 diagnose_identity.py     # only if cases show status 2
 python3 ge_gpr_scalar.py         # adjoint values + gradients (default)
 python3 ge_gpr_scalar.py fd      # q_net + finite-difference placeholder
 python3 gpr_scalar_void_sweep.py

@@ -63,6 +63,7 @@ Assumptions (check before trusting a number)
     (verify_void_sensitivity.py checks the method on a synthetic S_N slab).
 """
 
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -133,12 +134,6 @@ def load_nodal_field(path: Path) -> NodalField:
     if np.any(np.diff(x_left) <= 0):
         raise ValueError(f"{path.name}: elements are not ordered by x")
     return NodalField(x_left, x_right, block, left, right)
-
-
-def rescale_x(field: NodalField, factor: float) -> NodalField:
-    """Same values on the mesh x -> factor * x."""
-    return NodalField(field.x_left * factor, field.x_right * factor, field.block,
-                      field.left, field.right)
 
 
 def same_mesh(a: NodalField, b: NodalField) -> bool:
@@ -274,10 +269,10 @@ def dump_length_per_key_length(field: NodalField, t_v_key: float, cid: int = -1)
     """
     s = (void width in the dump's x) / (Void_Thickness in case_key.txt), per side.
 
-    The dumps may be on a normalised domain (x in [0,1]) while case_key.txt is
-    physical. main() divides the dump x by s, so q, the boundary identity and
-    dq/dt_v are all computed on a mesh in case_key units. s = 1 if the units
-    already agree. Raises if the two voids differ in width.
+    The interface formula gives dq/dx_i per unit dump length, and the void
+    width moves by s dump lengths per unit Void_Thickness, so
+    dq/dt_v[case_key units] = s * dq/dx_i, whatever units the solve used.
+    s = 1 if the units already agree. Raises if the two voids differ in width.
     """
     w_l = float(field.h[field.block == BLOCK_VOID_L].sum())
     w_r = float(field.h[field.block == BLOCK_VOID_R].sum())
@@ -287,11 +282,45 @@ def dump_length_per_key_length(field: NodalField, t_v_key: float, cid: int = -1)
     return 0.5 * (w_l + w_r) / t_v_key
 
 
-def main(data_dir: Path = DATA_DIR, out_dir: Path = OUT_DIR, adjoint_angles_reversed=None):
+STATUS_OK, STATUS_UNCHECKED, STATUS_FAILED = 0, 1, 2
+
+
+def _vacuum_leak(adj: NodalField, mu: np.ndarray) -> float:
     """
-    adjoint_angles_reversed: None picks the convention whose boundary identity
-    matches q best; True/False forces it.
+    max |psi+| on the directions where psi+ must vanish (forward-outgoing:
+    mu < 0 on the left face, mu > 0 on the right face), relative to max |psi+|.
+    Near zero for the right angle convention, independent of units or sources.
     """
+    scale = max(np.abs(adj.left).max(), np.abs(adj.right).max(), 1e-300)
+    leak = max(np.abs(adj.left[0][:, mu < 0]).max(), np.abs(adj.right[-1][:, mu > 0]).max())
+    return float(leak / scale)
+
+
+def _incoming_fraction(fwd: NodalField, mu: np.ndarray, w: np.ndarray) -> float:
+    """Forward partial current entering through both faces / (entering + leaving)."""
+    wa = w * np.abs(mu)
+    j_in = (np.einsum("ga,a->", fwd.left[0][:, mu > 0], wa[mu > 0])
+            + np.einsum("ga,a->", fwd.right[-1][:, mu < 0], wa[mu < 0]))
+    j_out = (np.einsum("ga,a->", fwd.left[0][:, mu < 0], wa[mu < 0])
+             + np.einsum("ga,a->", fwd.right[-1][:, mu > 0], wa[mu > 0]))
+    return float(abs(j_in) / max(abs(j_in) + abs(j_out), 1e-300))
+
+
+def main(data_dir: Path = DATA_DIR, out_dir: Path = OUT_DIR, adjoint_angles_reversed=None,
+         q_mesh: str = "auto"):
+    """
+    adjoint_angles_reversed: None picks the convention whose adjoint dump obeys
+        the vacuum condition; True/False forces it.
+    q_mesh: which length unit q = <Q+, psi> is integrated in.
+        "dump"     the dumps' own x (right whenever the CSVs carry the SCEPTRE
+                   mesh coordinates, e.g. from exodus_to_csv.py),
+        "case_key" x rescaled so the void width equals Void_Thickness (right only
+                   if the dumps' x was normalised after the solve),
+        "auto"     let the boundary identity choose when it applies, else "dump".
+    dq/dt_v does not depend on this choice: it is always per unit Void_Thickness.
+    """
+    if q_mesh not in ("auto", "dump", "case_key"):
+        raise ValueError("q_mesh must be 'auto', 'dump' or 'case_key'")
     data_dir, out_dir = Path(data_dir), Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     mu, w = gauss_lobatto(8)
@@ -301,7 +330,7 @@ def main(data_dir: Path = DATA_DIR, out_dir: Path = OUT_DIR, adjoint_angles_reve
     print("dq/dt_v from forward + adjoint dumps (fixed outer radius)")
     print("=" * 72)
 
-    rows, gap_levels, scales = [], [], []
+    rows, gap_levels, scales, meshes = [], [], [], []
     for cid in sorted(case_key):
         f_path = data_dir / FORWARD_PATTERN.format(cid)
         s_path = data_dir / ADJOINT_SOURCE_PATTERN.format(cid)
@@ -314,38 +343,70 @@ def main(data_dir: Path = DATA_DIR, out_dir: Path = OUT_DIR, adjoint_angles_reve
         fwd, src = load_nodal_field(f_path), load_nodal_field(s_path)
         if not same_mesh(fwd, src):
             raise ValueError(f"case {cid}: forward and adjoint-source meshes differ")
-        # Put the mesh in case_key units so dq/dt_v comes out per unit Void_Thickness.
         s = dump_length_per_key_length(fwd, t_v, cid)
         scales.append(s)
-        fwd, src = rescale_x(fwd, 1.0 / s), rescale_x(src, 1.0 / s)
-        q = charge_functional(fwd, src, w)
         gap_levels.append(_gap_source_level(src, mu))
+        q_dump = charge_functional(fwd, src, w)
+        q_key = q_dump / s
         print(f"\nCase {cid:04d}  t_v = {t_v:.6g}")
         print(f"  dump void width / t_v       = {s:.6g}  (dump x per case_key length unit)")
-        print(f"  q = <Q+, psi>               = {q:.6e}   (mesh in case_key units)")
+        print(f"  q = <Q+, psi>, dump mesh    = {q_dump:.6e}")
+        if not np.isclose(s, 1.0):
+            print(f"  q = <Q+, psi>, case_key mesh= {q_key:.6e}")
 
-        q_adj = dq_f = dq_a = np.nan
+        q = q_dump if q_mesh != "case_key" else q_key
+        q_b = dq_f = dq_a = np.nan
+        status = STATUS_UNCHECKED
         if a_path.exists():
-            adj = rescale_x(load_nodal_field(a_path), 1.0 / s)
+            adj = load_nodal_field(a_path)
             if not same_mesh(fwd, adj):
                 raise ValueError(f"case {cid}: forward and adjoint meshes differ")
-            q_same = boundary_functional(fwd, adj, mu, w)
-            q_rev = boundary_functional(fwd, reverse_angles(adj, mu), mu, w)
-            print(f"  q from adjoint (same mu)    = {q_same:.6e}   rel. diff {abs(q_same - q) / abs(q):.2e}")
-            print(f"  q from adjoint (reversed mu)= {q_rev:.6e}   rel. diff {abs(q_rev - q) / abs(q):.2e}")
-            reverse = (abs(q_rev - q) < abs(q_same - q)) if adjoint_angles_reversed is None \
+
+            # Angle convention of the adjoint dump, from its vacuum faces.
+            leak_same = _vacuum_leak(adj, mu)
+            leak_rev = _vacuum_leak(reverse_angles(adj, mu), mu)
+            reverse = (leak_rev < leak_same) if adjoint_angles_reversed is None \
                 else adjoint_angles_reversed
+            print(f"  adjoint vacuum-face leak    = {leak_same:.2e} (same mu), {leak_rev:.2e} (reversed)"
+                  f"  -> using {'reversed' if reverse else 'same'} mu")
+            if min(leak_same, leak_rev) > 1e-3:
+                print("  WARNING: neither angle convention gives a vacuum adjoint on the outer faces; "
+                      "check the adjoint dump's boundary conditions and angle order.")
             if reverse:
                 adj = reverse_angles(adj, mu)
-            q_adj = q_rev if reverse else q_same
-            if abs(q_adj - q) > IDENTITY_TOL * abs(q):
-                print(f"  WARNING: boundary identity misses q by {abs(q_adj - q) / abs(q):.1%}. "
-                      "The x units, the adjoint dump, or the source assumption is wrong; "
-                      "do not use this case's gradient.")
 
+            # Boundary identity: a check only if the forward flux enters through the faces.
+            q_b = boundary_functional(fwd, adj, mu, w)
+            frac_in = _incoming_fraction(fwd, mu, w)
+            print(f"  boundary term sum w|mu|psi+psi_in = {q_b:.6e}   "
+                  f"(forward current entering / total at faces: {frac_in:.2e})")
+            if frac_in < 1e-8 or q_b == 0.0:
+                print("  boundary identity not applicable: no forward flux enters through the "
+                      "faces, so the source is internal. q and dq/dt_v are not checked by it; "
+                      "rely on a finite-difference check in t_v.")
+            else:
+                e_dump = abs(q_b - q_dump) / abs(q_dump)
+                e_key = abs(q_b - q_key) / abs(q_key)
+                print(f"  identity miss: {e_dump:.2e} on dump mesh, {e_key:.2e} on case_key mesh")
+                best = "dump" if e_dump <= e_key else "case_key"
+                err = min(e_dump, e_key) if q_mesh == "auto" else (e_dump if q_mesh == "dump" else e_key)
+                if q_mesh == "auto":
+                    q = q_dump if best == "dump" else q_key
+                    meshes.append(best)
+                if err <= IDENTITY_TOL:
+                    status = STATUS_OK
+                else:
+                    status = STATUS_FAILED
+                    print(f"  WARNING: boundary identity misses q by {err:.1%} on either mesh. With "
+                          "forward flux entering the faces this points to a forward volume source "
+                          "as well, an adjoint that is not the adjoint of this forward problem, or "
+                          "an angle-order mismatch. Run diagnose_identity.py.")
+
+            # Interface formula on the dump mesh gives dq/dx_i per dump length; the void
+            # width moves by s dump lengths per unit Void_Thickness.
             sens = void_thickness_sensitivity(fwd, adj, src, mu, w)
-            dq_f, dq_a = sens["forward_form"], sens["adjoint_form"]
-            print(f"  dq/dt_v forward form        = {dq_f:.6e}   (case_key units)")
+            dq_f, dq_a = s * sens["forward_form"], s * sens["adjoint_form"]
+            print(f"  dq/dt_v forward form        = {dq_f:.6e}   (per case_key unit)")
             print(f"  dq/dt_v adjoint form        = {dq_a:.6e}   "
                   f"(forms differ by {abs(dq_f - dq_a) / max(abs(dq_a), 1e-300):.1%})")
             for k, it in enumerate(sens["interfaces"]):
@@ -353,7 +414,9 @@ def main(data_dir: Path = DATA_DIR, out_dir: Path = OUT_DIR, adjoint_angles_reve
                       f"operator fwd {it['operator_forward']:+.3e}, adj {it['operator_adjoint']:+.3e}")
         else:
             print(f"  [no adjoint solution: {a_path.name}]")
-        rows.append((cid, t_v, q, q_adj, dq_f, dq_a, s))
+        print(f"  q used                      = {q:.6e}   status: "
+              f"{['identity OK', 'unchecked', 'identity FAILED'][status]}")
+        rows.append((cid, t_v, q, q_b, dq_f, dq_a, s, status))
 
     if len(gap_levels) > 1 and np.ptp(gap_levels) > 1e-8 * max(gap_levels):
         print("\nWARNING: the adjoint source in the gap changes between cases, so Q+ depends "
@@ -363,17 +426,25 @@ def main(data_dir: Path = DATA_DIR, out_dir: Path = OUT_DIR, adjoint_angles_reve
               f"({min(scales):.6g} to {max(scales):.6g}). Either case_key.txt does not match "
               "the dumps, or each case is normalised by a different total length, in which "
               "case q itself is not comparable across cases.")
+    if len(set(meshes)) > 1:
+        print("\nWARNING: the boundary identity picked different q meshes for different cases "
+              f"({meshes}); q values are on mixed units. Force q_mesh='dump' or 'case_key'.")
 
     table = np.array(rows, dtype=float)
     out_path = out_dir / "qoi_void_adjoint.txt"
     np.savetxt(out_path, table,
-               header="case_id void_thickness q q_adjoint_boundary dq_dtv_forward_form "
-                      "dq_dtv_adjoint_form dump_per_key_length\n"
-                      "dq_dtv_* are per unit of case_key Void_Thickness",
-               fmt=["%d"] + ["%.8e"] * 6)
-    print(f"\nWrote {out_path}  ({len(rows)} case(s))")
+               header="case_id void_thickness q q_boundary dq_dtv_forward_form "
+                      "dq_dtv_adjoint_form dump_per_key_length status\n"
+                      "dq_dtv_* are per unit of case_key Void_Thickness; "
+                      "status 0 = identity OK, 1 = unchecked (internal source), 2 = identity failed",
+               fmt=["%d"] + ["%.8e"] * 6 + ["%d"])
+    counts = np.bincount(table[:, 7].astype(int), minlength=3) if len(rows) else [0, 0, 0]
+    print(f"\nWrote {out_path}  ({len(rows)} case(s): {counts[0]} OK, {counts[1]} unchecked, "
+          f"{counts[2]} failed)")
     return table
 
 
 if __name__ == "__main__":
-    main()
+    # python3 void_sensitivity.py [DATA_DIR] [auto|dump|case_key]
+    main(data_dir=sys.argv[1] if len(sys.argv) > 1 else DATA_DIR,
+         q_mesh=sys.argv[2] if len(sys.argv) > 2 else "auto")

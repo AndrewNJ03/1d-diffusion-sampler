@@ -50,25 +50,31 @@ def finite_difference_gradient(X: np.ndarray, y: np.ndarray):
     return dy_dx
 
 
-def load_adjoint_table(path: Path = None, identity_tol: float = 0.05):
+def load_adjoint_table(path: Path = None, allow_failed: bool = False):
     """
     Read void_sensitivity.py's qoi_void_adjoint.txt.
-    Returns case_ids, X (M, 1) void thickness, q (M,), dq/dt_v (M,), keeping
-    only cases with a finite adjoint gradient whose boundary identity matches
-    q to identity_tol (a failed identity means the gradient is not trustworthy).
+    Returns case_ids, X (M, 1) void thickness, q (M,), dq/dt_v (M,). Drops cases
+    without an adjoint gradient and, unless allow_failed, cases whose boundary
+    identity failed (status 2). Cases the identity could not check (status 1,
+    internal forward source) are kept.
     """
     path = Path(path) if path is not None else OUT_DIR / "qoi_void_adjoint.txt"
     table = np.atleast_2d(np.loadtxt(path, comments="#"))
-    if table.shape[1] < 7:
-        raise ValueError(f"{path} predates the case_key unit conversion; rerun void_sensitivity.py")
+    if table.shape[1] < 8:
+        raise ValueError(f"{path} was written by an older void_sensitivity.py; rerun it")
+    status = table[:, 7].astype(int)
     has_grad = np.isfinite(table[:, 5])
-    with np.errstate(invalid="ignore"):
-        ok_identity = np.abs(table[:, 3] - table[:, 2]) <= identity_tol * np.abs(table[:, 2])
+    failed = has_grad & (status == 2)
+    keep = has_grad & (allow_failed | (status != 2))
     for mask, why in ((~has_grad, "no adjoint gradient"),
-                      (has_grad & ~ok_identity, f"boundary identity off by > {identity_tol:.0%}")):
+                      (failed & ~keep, "boundary identity failed")):
         if mask.any():
             print(f"Dropping {int(mask.sum())} case(s), {why}: {table[mask, 0].astype(int).tolist()}")
-    table = table[has_grad & ok_identity]
+    unchecked = keep & (status == 1)
+    if unchecked.any():
+        print(f"{int(unchecked.sum())} case(s) not checked by the boundary identity (internal "
+              f"source): {table[unchecked, 0].astype(int).tolist()}")
+    table = table[keep]
     return table[:, 0].astype(int), table[:, 1:2], table[:, 2], table[:, 5]
 
 
@@ -81,6 +87,9 @@ def main(n_restarts: int = 10, out_dir: Path = OUT_DIR, gradient_source: str = "
     print(f"GE-GPR ({gradient_source} gradients) — scalar SGEMP charge QoI")
     print("=" * 60)
 
+    if table_path is None:
+        table_path = out_dir / ("qoi_void_adjoint.txt" if gradient_source == "adjoint"
+                                else "qoi_scalar.txt")
     if gradient_source == "adjoint":
         case_ids, X, y, dy_dx_phys = load_adjoint_table(table_path)
         qlabel = r"$q = \langle Q^\dagger, \psi\rangle$"
