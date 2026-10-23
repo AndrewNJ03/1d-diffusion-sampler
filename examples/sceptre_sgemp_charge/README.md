@@ -255,6 +255,24 @@ is poor) and adds $\langle\partial Q^\dagger/\partial t_v,\psi\rangle=\sum_b
 adjoint form matches finite differences to 1e-8 on synthetic data with
 $c_b\propto E_b(t_v)$.
 
+**Q⁺ dump vs. the source the adjoint was solved with.** With a coupled
+adjoint (photon importance present) and a forward problem driven only by flux
+entering the faces, the identity must hold. If it fails on every case, the
+likeliest cause is that `case_*_adjoint_1d.csv` is not the source SCEPTRE's
+adjoint solve used. For each failing case the script prints the boundary term
+divided by $\langle Q^\dagger,\psi\rangle$ restricted to: all blocks, the gap only,
+all but the core, all but the shields. The variant with ratio ≈ 1 is the source
+the adjoint belongs to. (On synthetic data with a spurious core spike added to
+the dump, "gap only" gives 1.0000.)
+
+Either fix the $Q^\dagger$ dumps, or run with `q_source="boundary"`
+(`python3 void_sensitivity.py DATA_DIR auto auto boundary`): $q$ is then the
+boundary term, which is the functional the adjoint flux belongs to, so values and
+adjoint-form gradients are consistent; $Q^\dagger$ is used only for
+$\langle\partial Q^\dagger/\partial t_v,\psi\rangle$ (gap blocks). Cases are marked
+status 1. On the synthetic spike data this recovers $q$ exactly and the
+gradient to 1e-7.
+
 **Boundary identity**, $q=\sum_\text{incoming}w|\mu|\psi^\dagger\psi_\text{in}$:
 a check, not an input. Status per case in column 8:
 
@@ -331,7 +349,7 @@ cd examples/sceptre_sgemp_charge
 python3 exodus_to_csv.py --batch ...   # §6, once per data set
 python3 extract_qoi.py
 python3 gpr_scalar.py
-python3 void_sensitivity.py      # writes output/qoi_void_adjoint.txt ([DATA_DIR] [auto|dump|case_key] [auto|ascending|descending])
+python3 void_sensitivity.py      # writes output/qoi_void_adjoint.txt ([DATA_DIR] [auto|dump|case_key] [auto|ascending|descending] [volume|boundary])
 python3 diagnose_identity.py     # only if cases show status 2
 python3 ge_gpr_scalar.py         # adjoint values + gradients (default)
 python3 ge_gpr_scalar.py fd      # q_net + finite-difference placeholder

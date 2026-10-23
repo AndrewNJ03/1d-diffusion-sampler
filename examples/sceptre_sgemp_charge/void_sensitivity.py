@@ -412,8 +412,14 @@ CONVENTIONS = [  # (dump angle order, adjoint relabelled relative to forward)
 
 
 def main(data_dir: Path = DATA_DIR, out_dir: Path = OUT_DIR, adjoint_angles_reversed=None,
-         q_mesh: str = "auto", angle_order: str = "auto"):
+         q_mesh: str = "auto", angle_order: str = "auto", q_source: str = "volume"):
     """
+    q_source: "volume" uses q = <Q+, psi> from the adjoint-source dump (default).
+        "boundary" uses q = sum_incoming w|mu| psi+ psi_in, the functional the
+        adjoint flux itself belongs to, for a forward problem driven only by
+        flux entering the faces. Use it when the Q+ dump is not the source the
+        adjoint was solved with (the identity then fails on every case, with
+        a coupled adjoint). Q+ is still used for <dQ+/dt_v, psi>.
     angle_order: "ascending" (index 0 is mu = -1), "descending" (index 0 is
         mu = +1), or "auto". Applies to all three dumps (forward, Q+, adjoint).
     adjoint_angles_reversed: True if the adjoint dump's index is reversed
@@ -437,6 +443,8 @@ def main(data_dir: Path = DATA_DIR, out_dir: Path = OUT_DIR, adjoint_angles_reve
     """
     if q_mesh not in ("auto", "dump", "case_key"):
         raise ValueError("q_mesh must be 'auto', 'dump' or 'case_key'")
+    if q_source not in ("volume", "boundary"):
+        raise ValueError("q_source must be 'volume' or 'boundary'")
     if angle_order not in ("auto", "ascending", "descending"):
         raise ValueError("angle_order must be 'auto', 'ascending' or 'descending'")
     data_dir, out_dir = Path(data_dir), Path(out_dir)
@@ -540,7 +548,7 @@ def main(data_dir: Path = DATA_DIR, out_dir: Path = OUT_DIR, adjoint_angles_reve
                 for cid in level_ids}
 
     # ---- Pass 2: q and dq/dt_v under that convention. ----
-    rows, src_levels, scales, meshes = [], [], [], []
+    rows, src_levels, scales, meshes, identity_failures = [], [], [], [], []
     for cid in sorted(case_key):
         t_v = case_key[cid]["Void_Thickness"]
         loaded = load_case(cid)
@@ -560,6 +568,7 @@ def main(data_dir: Path = DATA_DIR, out_dir: Path = OUT_DIR, adjoint_angles_reve
             print(f"  q = <Q+, psi>, case_key mesh= {q_key:.6e}")
 
         q = q_dump if q_mesh != "case_key" else q_key
+        len_factor = 1.0 if q_mesh != "case_key" else 1.0 / s   # length unit of volume integrals
         q_b = dq_f = dq_a = dq_use = np.nan
         status = STATUS_UNCHECKED
         use_form = "adjoint"
@@ -592,15 +601,29 @@ def main(data_dir: Path = DATA_DIR, out_dir: Path = OUT_DIR, adjoint_angles_reve
                 if q_mesh == "auto" and sc["err"] <= IDENTITY_TOL:
                     mesh = "dump" if sc["e_dump"] <= sc["e_key"] else "case_key"
                     q = q_dump if mesh == "dump" else q_key
+                    len_factor = 1.0 if mesh == "dump" else 1.0 / s
                     meshes.append(mesh)
                 if sc["err"] <= IDENTITY_TOL:
                     status = STATUS_OK
                 else:
                     status = STATUS_FAILED
-                    print(f"  WARNING: boundary identity misses q by {sc['err']:.1%}. Flux enters "
-                          "through the faces, so this points to a forward volume source as well, "
-                          "an adjoint of a different problem, or a discretization problem at the "
-                          "boundary. Run diagnose_identity.py.")
+                    identity_failures.append(cid)
+                    print(f"  WARNING: boundary identity misses q by {sc['err']:.1%}.")
+                    # Which part of the Q+ dump does the adjoint actually belong to?
+                    print("  Q+ consistency: boundary term / <Q+, psi> restricted to")
+                    variants = [("all blocks", None), ("gap only (2,3,5,6)", GAP_BLOCKS),
+                                ("all but core (4)", (1, 2, 3, 5, 6, 7)),
+                                ("all but shields (1,7)", (2, 3, 4, 5, 6))]
+                    for name, blocks in variants:
+                        mask = None if blocks is None else np.isin(src_raw.block, blocks)
+                        qv = volume_inner_product(src_raw, fwd_raw, w, elem_mask=mask)
+                        ratio = q_b / qv if qv != 0 else np.inf
+                        print(f"    {name:22s} <Q+,psi> = {qv:+.6e}   ratio {ratio:+.4f}")
+                if q_source == "boundary":
+                    q = q_b
+                    status = STATUS_UNCHECKED
+                    print("  q taken from the boundary term (q_source='boundary'): consistent with "
+                          "the adjoint flux, not checked against the Q+ dump.")
 
             # Interface formula on the dump mesh gives dq/dx_i per dump length; the void
             # width moves by s dump lengths per unit Void_Thickness.
@@ -610,7 +633,7 @@ def main(data_dir: Path = DATA_DIR, out_dir: Path = OUT_DIR, adjoint_angles_reve
             dsrc = 0.0
             for b, slope in slope_at.get(cid, {}).items():
                 dsrc += slope * volume_inner_product(src_raw, fwd_raw, w, elem_mask=src_raw.block == b)
-            dsrc *= q / q_dump
+            dsrc *= len_factor
             if slope_at.get(cid):
                 print(f"  <dQ+/dt_v, psi>             = {dsrc:.6e}   (added to both forms)")
             dq_f, dq_a = dq_f + dsrc, dq_a + dsrc
@@ -644,6 +667,12 @@ def main(data_dir: Path = DATA_DIR, out_dir: Path = OUT_DIR, adjoint_angles_reve
     if len(set(meshes)) > 1:
         print("\nWARNING: the boundary identity picked different q meshes for different cases "
               f"({meshes}); q values are on mixed units. Force q_mesh='dump' or 'case_key'.")
+    if identity_failures and q_source == "volume" and len(identity_failures) == len(scores):
+        print("\nThe boundary identity failed on every case with a coupled adjoint and flux "
+              "entering the faces. The likeliest cause is that the adjoint-source dump is not the "
+              "source SCEPTRE's adjoint was solved with (see the Q+ consistency ratios: the variant "
+              "with ratio ~1 is the one it used). Either fix the Q+ dumps, or take q from the "
+              "boundary term: python3 void_sensitivity.py DATA_DIR auto auto boundary")
     if conv_use is not None:
         print(f"\nAngle convention used for every case: {c_label(conv_use)}")
 
@@ -664,6 +693,8 @@ def main(data_dir: Path = DATA_DIR, out_dir: Path = OUT_DIR, adjoint_angles_reve
 
 if __name__ == "__main__":
     # python3 void_sensitivity.py [DATA_DIR] [auto|dump|case_key] [auto|ascending|descending]
+    #                             [volume|boundary]
     main(data_dir=sys.argv[1] if len(sys.argv) > 1 else DATA_DIR,
          q_mesh=sys.argv[2] if len(sys.argv) > 2 else "auto",
-         angle_order=sys.argv[3] if len(sys.argv) > 3 else "auto")
+         angle_order=sys.argv[3] if len(sys.argv) > 3 else "auto",
+         q_source=sys.argv[4] if len(sys.argv) > 4 else "volume")
