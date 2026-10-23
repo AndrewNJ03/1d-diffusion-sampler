@@ -273,6 +273,14 @@ $\langle\partial Q^\dagger/\partial t_v,\psi\rangle$ (gap blocks). Cases are mar
 status 1. On the synthetic spike data this recovers $q$ exactly and the
 gradient to 1e-7.
 
+**Cross-case check.** At the end, `void_sensitivity.py` compares each case's
+$dq/dt_v$ with finite differences of $q$ between the cases themselves
+(second-order `np.gradient` over sorted $t_v$). It needs no extra transport
+runs. Its own error is the curvature of $q(t_v)$ over the case spacing, which the
+script reports: for a nearly linear response the comparison is a strict test of
+the gradients; for a curved one, agreement to a few percent is what to expect
+(about 2% on the synthetic sets, whose adjoint gradients are exact to 1e-7).
+
 **Boundary identity**, $q=\sum_\text{incoming}w|\mu|\psi^\dagger\psi_\text{in}$:
 a check, not an input. Status per case in column 8:
 

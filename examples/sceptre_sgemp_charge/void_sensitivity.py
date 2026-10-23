@@ -402,6 +402,35 @@ def _source_log_slopes(t_vals: np.ndarray, levels: list) -> tuple:
     return slopes, how
 
 
+def cross_case_check(rows) -> None:
+    """
+    Compare the adjoint dq/dt_v with finite differences of q across the cases
+    themselves (np.gradient over sorted t_v: second-order central inside,
+    second-order one-sided at the ends). No extra transport runs; accurate when q(t_v) is smooth on the case
+    spacing, exact for a linear response. Interior cases are the reliable ones.
+    """
+    r = np.array([row for row in rows if np.isfinite(row[8])], dtype=float) if rows else None
+    if r is None or len(r) < 3:
+        return
+    order = np.argsort(r[:, 1])
+    t, q, g = r[order, 1], r[order, 2], r[order, 8]
+    if len(np.unique(t)) < len(t):
+        return
+    fd = np.gradient(q, t, edge_order=2) if len(t) >= 3 else np.gradient(q, t)
+    curv = np.polyfit(t, q, 2)[0] * np.ptp(t) ** 2 / max(np.ptp(q), 1e-300)
+    print("\nCross-case check: adjoint dq/dt_v vs finite differences of q between cases")
+    print(f"  q(t_v) curvature over the range: {curv:+.2e} of its span "
+          "(small = nearly linear, so the finite differences are accurate)")
+    print("    case    t_v          q              dq/dt_v used   FD across cases   rel. diff")
+    for k in range(len(t)):
+        tag = "" if 0 < k < len(t) - 1 else "  (one-sided)"
+        print(f"    {int(r[order[k], 0]):4d}  {t[k]:10.5g}  {q[k]:+.6e}  {g[k]:+.6e}  {fd[k]:+.6e}"
+              f"     {(g[k] - fd[k]) / max(abs(fd[k]), 1e-300):+.2e}{tag}")
+    inner = slice(1, len(t) - 1)
+    rel = np.abs(g[inner] - fd[inner]) / np.maximum(np.abs(fd[inner]), 1e-300)
+    print(f"  interior cases: median |rel. diff| {np.median(rel):.2e}, max {rel.max():.2e}")
+
+
 def c_label(conv) -> str:
     return f"{conv[0]}, adjoint {'reversed' if conv[1] else 'same'}"
 
@@ -667,6 +696,7 @@ def main(data_dir: Path = DATA_DIR, out_dir: Path = OUT_DIR, adjoint_angles_reve
     if len(set(meshes)) > 1:
         print("\nWARNING: the boundary identity picked different q meshes for different cases "
               f"({meshes}); q values are on mixed units. Force q_mesh='dump' or 'case_key'.")
+    cross_case_check(rows)
     if identity_failures and q_source == "volume" and len(identity_failures) == len(scores):
         print("\nThe boundary identity failed on every case with a coupled adjoint and flux "
               "entering the faces. The likeliest cause is that the adjoint-source dump is not the "
