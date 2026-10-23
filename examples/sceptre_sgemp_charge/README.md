@@ -265,13 +265,39 @@ all but the core, all but the shields. The variant with ratio ≈ 1 is the sourc
 the adjoint belongs to. (On synthetic data with a spurious core spike added to
 the dump, "gap only" gives 1.0000.)
 
-Either fix the $Q^\dagger$ dumps, or run with `q_source="boundary"`
-(`python3 void_sensitivity.py DATA_DIR auto auto boundary`): $q$ is then the
-boundary term, which is the functional the adjoint flux belongs to, so values and
-adjoint-form gradients are consistent; $Q^\dagger$ is used only for
-$\langle\partial Q^\dagger/\partial t_v,\psi\rangle$ (gap blocks). Cases are marked
-status 1. On the synthetic spike data this recovers $q$ exactly and the
-gradient to 1e-7.
+Either fix the $Q^\dagger$ dumps, or run with `--q-source boundary`: $q$ is then
+the boundary term, which is the functional the adjoint flux belongs to, so values
+and adjoint-form gradients are consistent. The $\langle\partial Q^\dagger/\partial
+t_v,\psi\rangle$ term is then off by default (`--source-term auto`): the dumps are
+not the adjoint's source, so their $t_v$ dependence says nothing about it. Cases
+are marked status 1. On the synthetic spike data this recovers $q$ exactly and
+the gradient to 1e-7.
+
+**SCEPTRE runs (constantR_void_10).** SCEPTRE's `q_directdrive` for cases 0 and 1
+(2.2433e-8, 1.0612e-8) is half the boundary term (4.489e-8, 2.160e-8: 0.05% and
+1.8%) and half of $\langle Q^\dagger,\psi\rangle$ with the *original* adjoint-source
+dumps (4.49e-8, 2.12e-8). So SCEPTRE's QoI, its adjoint flux and those original
+dumps agree; the later field-tool dumps (`case_*_adjoint_1d.csv`, with a large
+core contribution and a $t_v$-dependent gap field) are not the source SCEPTRE
+uses. The factor 2 is the angular weight normalisation: SCEPTRE's weights sum to
+1, this script's to 2 (`--weight-sum 1` matches SCEPTRE; $q$ and $dq/dt_v$ both
+scale with it). The original source was $c\,\mu$ with $c=0.4439$ uniform over void
+and dielectric in both cases, i.e. independent of $t_v$, so no
+$\langle\partial Q^\dagger/\partial t_v,\psi\rangle$ term. Until the original-style
+source is dumped for every case, run
+
+```bash
+python3 void_sensitivity.py DATA_DIR --q-source boundary --weight-sum 1 \
+    [--reference-q qdd.txt]
+```
+
+`--reference-q` takes a two-column file `case_id q` (e.g. SCEPTRE's
+`q_directdrive` per case) and prints the comparison. On synthetic data built
+this way (adjoint from a uniform $t_v$-independent source, dump from a
+$t_v$-dependent field with a core spike), this reproduces the reference $q$
+exactly and $dq/dt_v$ to 6e-8; forcing the source term on instead puts the
+gradients off by up to 6× and the cross-case check flags it (median 120%
+against 1%).
 
 **Cross-case check.** At the end, `void_sensitivity.py` compares each case's
 $dq/dt_v$ with finite differences of $q$ between the cases themselves
@@ -357,7 +383,7 @@ cd examples/sceptre_sgemp_charge
 python3 exodus_to_csv.py --batch ...   # §6, once per data set
 python3 extract_qoi.py
 python3 gpr_scalar.py
-python3 void_sensitivity.py      # writes output/qoi_void_adjoint.txt ([DATA_DIR] [auto|dump|case_key] [auto|ascending|descending] [volume|boundary])
+python3 void_sensitivity.py      # writes output/qoi_void_adjoint.txt; --help for options
 python3 diagnose_identity.py     # only if cases show status 2
 python3 ge_gpr_scalar.py         # adjoint values + gradients (default)
 python3 ge_gpr_scalar.py fd      # q_net + finite-difference placeholder

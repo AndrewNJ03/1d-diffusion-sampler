@@ -431,6 +431,34 @@ def cross_case_check(rows) -> None:
     print(f"  interior cases: median |rel. diff| {np.median(rel):.2e}, max {rel.max():.2e}")
 
 
+def compare_reference_q(rows, path) -> None:
+    """
+    Compare q with reference values, e.g. SCEPTRE's q_directdrive, from a text
+    file with two columns per line: case_id q (commas or whitespace, '#' comments).
+    """
+    ref = {}
+    for line in Path(path).read_text().splitlines():
+        line = line.split("#")[0].replace(",", " ").split()
+        if len(line) >= 2:
+            try:
+                ref[int(float(line[0]))] = float(line[1])
+            except ValueError:
+                continue                       # header line
+    print(f"\nComparison with reference q from {Path(path).name}:")
+    print("    case   q (this script)    reference q       rel. diff")
+    diffs = []
+    for row in rows:
+        cid, q = int(row[0]), row[2]
+        if cid in ref and np.isfinite(q):
+            d = (q - ref[cid]) / abs(ref[cid])
+            diffs.append(abs(d))
+            print(f"    {cid:4d}  {q:+.6e}    {ref[cid]:+.6e}    {d:+.2e}")
+    if diffs:
+        print(f"  max |rel. diff| {max(diffs):.2e} over {len(diffs)} case(s)")
+    else:
+        print("  no case ids in common")
+
+
 def c_label(conv) -> str:
     return f"{conv[0]}, adjoint {'reversed' if conv[1] else 'same'}"
 
@@ -441,8 +469,16 @@ CONVENTIONS = [  # (dump angle order, adjoint relabelled relative to forward)
 
 
 def main(data_dir: Path = DATA_DIR, out_dir: Path = OUT_DIR, adjoint_angles_reversed=None,
-         q_mesh: str = "auto", angle_order: str = "auto", q_source: str = "volume"):
+         q_mesh: str = "auto", angle_order: str = "auto", q_source: str = "volume",
+         weight_sum: float = 2.0, source_term: str = "auto", reference_q=None):
     """
+    weight_sum: normalisation of the angular quadrature weights. 2.0 (default)
+        is sum w = 2 over mu in [-1, 1]; SCEPTRE's q_directdrive uses 1.0, i.e.
+        half the default. q, the boundary term and dq/dt_v all scale with it.
+    source_term: whether to add <dQ+/dt_v, psi> from the change of the Q+ dumps
+        between cases. "auto" adds it with q_source="volume" and skips it with
+        q_source="boundary" (then the Q+ dumps are not the adjoint's source, so
+        their t_v dependence says nothing about it). "on"/"off" force it.
     q_source: "volume" uses q = <Q+, psi> from the adjoint-source dump (default).
         "boundary" uses q = sum_incoming w|mu| psi+ psi_in, the functional the
         adjoint flux itself belongs to, for a forward problem driven only by
@@ -472,6 +508,9 @@ def main(data_dir: Path = DATA_DIR, out_dir: Path = OUT_DIR, adjoint_angles_reve
     """
     if q_mesh not in ("auto", "dump", "case_key"):
         raise ValueError("q_mesh must be 'auto', 'dump' or 'case_key'")
+    if source_term not in ("auto", "on", "off"):
+        raise ValueError("source_term must be 'auto', 'on' or 'off'")
+    use_source_term = source_term == "on" or (source_term == "auto" and q_source == "volume")
     if q_source not in ("volume", "boundary"):
         raise ValueError("q_source must be 'volume' or 'boundary'")
     if angle_order not in ("auto", "ascending", "descending"):
@@ -479,11 +518,14 @@ def main(data_dir: Path = DATA_DIR, out_dir: Path = OUT_DIR, adjoint_angles_reve
     data_dir, out_dir = Path(data_dir), Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     mu, w = gauss_lobatto(8)
+    w = w * (weight_sum / w.sum())
     case_key = load_case_key(data_dir / "case_key.txt")
 
     print("=" * 72)
     print("dq/dt_v from forward + adjoint dumps (fixed outer radius)")
     print("=" * 72)
+    print(f"angular weights sum to {w.sum():g}; q from the {q_source} form; "
+          f"<dQ+/dt_v, psi> term {'on' if use_source_term else 'off'}")
 
     def load_case(cid):
         paths = [data_dir / pat.format(cid) for pat in
@@ -569,10 +611,17 @@ def main(data_dir: Path = DATA_DIR, out_dir: Path = OUT_DIR, adjoint_angles_reve
     # ---- Q+ dependence on t_v (adds <dQ+/dt_v, psi> to dq/dt_v). ----
     slopes, slope_how = _source_log_slopes(np.array(level_t, dtype=float), level_list)
     if slope_how:
-        print("\nQ+ changes with t_v in block(s):")
+        print("\nQ+ dumps change with t_v in block(s):")
         for b, h in slope_how.items():
             print(f"  block {b}: {h}")
-        print("  -> adding <dQ+/dt_v, psi> = sum_b (d ln c_b/dt_v) <Q+|_b, psi> to dq/dt_v")
+        if use_source_term:
+            print("  -> adding <dQ+/dt_v, psi> = sum_b (d ln c_b/dt_v) <Q+|_b, psi> to dq/dt_v")
+        else:
+            print("  -> not added (source_term off): the Q+ dumps are not taken as the adjoint's "
+                  "source. If the source the adjoint was solved with depends on t_v, dq/dt_v "
+                  "misses that term; the cross-case check shows it.")
+    if not use_source_term:
+        slopes = {}
     slope_at = {cid: {b: float(v[level_ids.index(cid)]) for b, v in slopes.items()}
                 for cid in level_ids}
 
@@ -697,12 +746,14 @@ def main(data_dir: Path = DATA_DIR, out_dir: Path = OUT_DIR, adjoint_angles_reve
         print("\nWARNING: the boundary identity picked different q meshes for different cases "
               f"({meshes}); q values are on mixed units. Force q_mesh='dump' or 'case_key'.")
     cross_case_check(rows)
+    if reference_q is not None:
+        compare_reference_q(rows, reference_q)
     if identity_failures and q_source == "volume" and len(identity_failures) == len(scores):
         print("\nThe boundary identity failed on every case with a coupled adjoint and flux "
               "entering the faces. The likeliest cause is that the adjoint-source dump is not the "
               "source SCEPTRE's adjoint was solved with (see the Q+ consistency ratios: the variant "
               "with ratio ~1 is the one it used). Either fix the Q+ dumps, or take q from the "
-              "boundary term: python3 void_sensitivity.py DATA_DIR auto auto boundary")
+              "boundary term: python3 void_sensitivity.py DATA_DIR --q-source boundary")
     if conv_use is not None:
         print(f"\nAngle convention used for every case: {c_label(conv_use)}")
 
@@ -722,9 +773,18 @@ def main(data_dir: Path = DATA_DIR, out_dir: Path = OUT_DIR, adjoint_angles_reve
 
 
 if __name__ == "__main__":
-    # python3 void_sensitivity.py [DATA_DIR] [auto|dump|case_key] [auto|ascending|descending]
-    #                             [volume|boundary]
-    main(data_dir=sys.argv[1] if len(sys.argv) > 1 else DATA_DIR,
-         q_mesh=sys.argv[2] if len(sys.argv) > 2 else "auto",
-         angle_order=sys.argv[3] if len(sys.argv) > 3 else "auto",
-         q_source=sys.argv[4] if len(sys.argv) > 4 else "volume")
+    import argparse
+    ap = argparse.ArgumentParser(description="dq/dt_v from forward + adjoint dumps")
+    ap.add_argument("data_dir", nargs="?", default=str(DATA_DIR))
+    ap.add_argument("--q-mesh", default="auto", choices=["auto", "dump", "case_key"])
+    ap.add_argument("--angle-order", default="auto", choices=["auto", "ascending", "descending"])
+    ap.add_argument("--q-source", default="volume", choices=["volume", "boundary"])
+    ap.add_argument("--weight-sum", type=float, default=2.0,
+                    help="angular weight normalisation; 1 matches SCEPTRE's q_directdrive")
+    ap.add_argument("--source-term", default="auto", choices=["auto", "on", "off"],
+                    help="add <dQ+/dt_v, psi> from the Q+ dumps (auto: only with --q-source volume)")
+    ap.add_argument("--reference-q", metavar="FILE",
+                    help="two-column file 'case_id q' to compare q with (e.g. SCEPTRE q_directdrive)")
+    a = ap.parse_args()
+    main(data_dir=a.data_dir, q_mesh=a.q_mesh, angle_order=a.angle_order, q_source=a.q_source,
+         weight_sum=a.weight_sum, source_term=a.source_term, reference_q=a.reference_q)
