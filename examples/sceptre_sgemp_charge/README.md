@@ -221,29 +221,69 @@ dump` or `... case_key`. The earlier version always used the case_key mesh,
 which puts $q$ off by $1/s$ (and fails the identity on every case) when the dumps
 are in SCEPTRE's units and case_key is not.
 
+**Electron-only adjoint.** SCEPTRE's forward problem is a photon beam on the
+left face; $Q^\dagger$ is on electron groups only. If the adjoint dump carries
+no photon importance (max $|\psi^\dagger|$ over photon groups ≈ 0) while photons
+carry the entering current, the adjoint is the adjoint of the electron problem
+with photons acting as a **fixed electron source** $S_e$, which is nonzero in
+the dielectric and zero in the void. Then:
+- the boundary identity is $\approx 0$ (no importance on the incoming photons)
+  and misses $q$ by ~100% — it cannot hold, because the real identity is
+  $q=\langle\psi^\dagger,S_e\rangle$ and $S_e$ is not dumped;
+- the **adjoint form** misses a term $\psi^\dagger\cdot(S_\text{void}-S_\text{diel})$ at
+  each interface and is wrong by ~100% (case C below: it does not converge);
+- the **forward form** stays exact, because that source jump cancels in it.
+
+`void_sensitivity.py` prints the photon/electron split for every case and, when
+it finds this situation, marks the case status 1 and uses the forward form
+(column `dq_dtv_used`). Neither form includes how the photon flux itself
+changes with $t_v$ (attenuation in the thinner dielectric), since that needs
+photon importance; a finite-difference check in $t_v$ measures what it adds.
+
+**Forward form accuracy.** $\mu\,\partial_x\psi$ is extrapolated to the
+interface from the two nearest elements of each block and the adjoint is taken
+as its face trace. That makes the forward form second order (5e-3 at 25
+cells/cm to 2e-5 at 400 in cases A–C); with element averages it was first
+order (5% to 0.3%).
+
+**$Q^\dagger$ depending on $t_v$.** $Q^\dagger=-\mu\cdot E$ and the gap field of
+the series capacitor depends on $t_v$, so $Q^\dagger$'s level $c_b$ in each gap
+block changes between cases. The script fits $1/c_b$ linearly in $t_v$ (exact for
+a series capacitor; it falls back to finite differences of $\ln c_b$ if the fit
+is poor) and adds $\langle\partial Q^\dagger/\partial t_v,\psi\rangle=\sum_b
+(d\ln c_b/dt_v)\,\langle Q^\dagger|_b,\psi\rangle$ to both forms. With it the
+adjoint form matches finite differences to 1e-8 on synthetic data with
+$c_b\propto E_b(t_v)$.
+
 **Boundary identity**, $q=\sum_\text{incoming}w|\mu|\psi^\dagger\psi_\text{in}$:
 a check, not an input. Status per case in column 8:
 
 | status | meaning | used by GE-GPR |
 |---|---|---|
 | 0 | forward flux enters through the faces and the identity matches $q$ to 5% | yes |
-| 1 | no forward flux enters through the faces (internal source): the identity is $0$ and checks nothing | yes, listed |
+| 1 | identity not applicable: no forward flux enters (internal source), or an electron-only adjoint (forward form used) | yes, listed |
 | 2 | flux enters but the identity misses on both meshes: forward volume source as well, an adjoint of a different problem, or angle mismatch | no |
+
+The $q$ mesh is chosen by the identity only when it holds; otherwise the dump
+mesh is used.
 
 On synthetic dumps, the gradient and $q$ are exact (to 3e-8 against finite
 differences) for: $x$ normalised after the solve (identity picks the case_key
 mesh), dumps in solve units with case_key in other units (picks the dump mesh),
-and an internal source away from the gap (status 1). A perturbed adjoint is
-caught as status 2. `diagnose_identity.py [DATA_DIR]` prints the separate
-checks (incoming currents, vacuum leak, $Q^\dagger\psi$ by block and particle,
-boundary term per face and on each mesh) when a case fails.
+all four angle labellings, and an internal source away from the gap (status 1).
+For an electron-only adjoint shaped like the SCEPTRE dumps (38 groups, photon
+beam, descending angles, $Q^\dagger\propto E(t_v)$) the forward form used matches
+finite differences to 2–6e-4 at 80 cells/cm. A perturbed adjoint is caught as
+status 2. `diagnose_identity.py [DATA_DIR]` prints the separate checks.
 
-**Verification** (`verify_void_sensitivity.py`, one-group DD S16, two
-synthetic cases): the adjoint form matches central finite differences in $t_v$
-to about 5e-8 at 25–400 cells/cm; the forward form converges at first order
-(5% to 0.3%). This checks the formula and the code, not the transport solve's
-discretization: its dumps are discontinuous, so a finite-difference check on
-real runs at $t_v\pm\delta$ is still required.
+**Verification** (`verify_void_sensitivity.py`, one-group DD S16): A and B (flux
+entering both faces) — the adjoint form matches central finite differences in
+$t_v$ to about 5e-8 at 25–400 cells/cm and the forward form converges at second
+order. C (fixed source in the dielectric, vacuum faces: the electron-only
+analogue) — the identity misses by 100%, the adjoint form is off by ~100%, the
+forward form converges at second order. This checks the formulas and the code,
+not the transport solve's discretization: its dumps are discontinuous, so a
+finite-difference check on real runs at $t_v\pm\delta$ is still required.
 
 ## 6. From Exodus to CSV
 

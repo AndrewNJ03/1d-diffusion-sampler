@@ -41,7 +41,8 @@ form cancels in the adjoint form. The two forms agree in the continuum; their
 difference on real dumps is a discretization diagnostic. Use the adjoint form:
 on the synthetic diamond-difference slab in verify_void_sensitivity.py it
 matches central finite differences to ~5e-8 at every mesh, while the forward
-form converges at first order (5% at 25 cells/cm, 0.3% at 400).
+form converges at second order with face-extrapolated derivatives (it was
+first order, 5% to 0.3%, with element averages).
 
 Discretely, mu dpsi/dx in the element next to the interface is taken as the
 element's streaming integral divided by its width, including the jump from the
@@ -73,7 +74,7 @@ from extract_qoi import (
     COL_X_LEFT, COL_X_RIGHT, COL_ELEM_ID, COL_BLOCK_ID, COL_ENERGY_GROUP,
     COL_ANGLE_IDX, COL_LEFT_FLUX, COL_RIGHT_FLUX,
     BLOCK_DIELECTRIC_L, BLOCK_VOID_L, BLOCK_VOID_R, BLOCK_DIELECTRIC_R,
-    DATA_DIR, OUT_DIR, gauss_lobatto, load_case_key,
+    DATA_DIR, OUT_DIR, gauss_lobatto, load_case_key, ELECTRON_GROUP_MIN,
 )
 
 DIELECTRIC_BLOCKS = (BLOCK_DIELECTRIC_L, BLOCK_DIELECTRIC_R)
@@ -228,22 +229,42 @@ def void_thickness_sensitivity(fwd: NodalField, adj: NodalField, src: NodalField
         raise ValueError("no void/dielectric interface found")
     psi_avg, adj_avg, src_avg = fwd.average(), adj.average(), src.average()
 
+    def mu_dpsi_at_interface(e, away):
+        """
+        mu dpsi/dx of the forward flux at the interface face of element e: the
+        element's streaming average, linearly extrapolated to the face using the
+        next element of the same block (index e + away). Falls back to the
+        element average if that element is in another block.
+        """
+        d1 = element_streaming(fwd, mu, e, +1) / fwd.h[e]
+        e2 = e + away
+        if e2 < 0 or e2 >= len(fwd.h) or fwd.block[e2] != fwd.block[e]:
+            return d1
+        d2 = element_streaming(fwd, mu, e2, +1) / fwd.h[e2]
+        return d1 + (d1 - d2) * fwd.h[e] / (fwd.h[e] + fwd.h[e2])
+
     total_fwd, total_adj, per_interface = 0.0, 0.0, []
     for t, v in pairs:
         ht, hv = fwd.h[t], fwd.h[v]
-        mu_dpsi_t = element_streaming(fwd, mu, t, +1) / ht
-        mu_dpsi_v = element_streaming(fwd, mu, v, +1) / hv
         mu_dadj_t = element_streaming(adj, mu, t, -1) / ht
         mu_dadj_v = element_streaming(adj, mu, v, -1) / hv
 
-        # Forward flux at x_i: mean of the two traces.
+        # Traces at x_i: forward and adjoint as the mean of the two sides.
         if t < v:
             psi_face = 0.5 * (fwd.right[t] + fwd.left[v])
+            adj_face = 0.5 * (adj.right[t] + adj.left[v])
+            away_t, away_v = -1, +1
         else:
             psi_face = 0.5 * (fwd.left[t] + fwd.right[v])
+            adj_face = 0.5 * (adj.left[t] + adj.right[v])
+            away_t, away_v = +1, -1
 
+        # Forward form: second order with face-extrapolated derivatives and the
+        # adjoint's face trace (first order with element averages).
+        mu_dpsi_t = mu_dpsi_at_interface(t, away_t)
+        mu_dpsi_v = mu_dpsi_at_interface(v, away_v)
         source_term = _dot(src_avg[v] - src_avg[t], psi_face, w)
-        operator_fwd = _dot(adj_avg[v], mu_dpsi_v, w) - _dot(adj_avg[t], mu_dpsi_t, w)
+        operator_fwd = _dot(adj_face, mu_dpsi_v, w) - _dot(adj_face, mu_dpsi_t, w)
         operator_adj = _dot(mu_dadj_t, psi_avg[t], w) - _dot(mu_dadj_v, psi_avg[v], w)
 
         total_fwd += source_term + operator_fwd
@@ -330,6 +351,57 @@ def _forward_vacuum_score(fwd: NodalField, mu: np.ndarray, w: np.ndarray) -> flo
     return float(min(fl, fr))
 
 
+def _particle_split(fwd: NodalField, adj: NodalField, mu: np.ndarray, w: np.ndarray) -> dict:
+    """
+    Photon (groups 1..ELECTRON_GROUP_MIN-1) vs electron share of: the adjoint's
+    magnitude, the boundary term, and the forward current entering the faces.
+    """
+    n_ph = ELECTRON_GROUP_MIN - 1
+    a_all = max(np.abs(adj.left).max(), np.abs(adj.right).max(), 1e-300)
+    a_ph = max(np.abs(adj.left[:, :n_ph]).max(), np.abs(adj.right[:, :n_ph]).max()) if n_ph else 0.0
+    wl = w * np.abs(mu) * (mu > 0)
+    wr = w * np.abs(mu) * (mu < 0)
+    bt = (np.einsum("ga,ga,a->g", adj.left[0], fwd.left[0], wl)
+          + np.einsum("ga,ga,a->g", adj.right[-1], fwd.right[-1], wr))
+    jin = np.einsum("ga,a->g", fwd.left[0], wl) + np.einsum("ga,a->g", fwd.right[-1], wr)
+    return dict(adj_photon_rel=float(a_ph / a_all), bt_photon=float(bt[:n_ph].sum()),
+                bt_electron=float(bt[n_ph:].sum()), jin_photon=float(jin[:n_ph].sum()),
+                jin_electron=float(jin[n_ph:].sum()))
+
+
+def _source_log_slopes(t_vals: np.ndarray, levels: list) -> tuple:
+    """
+    d ln c_b / dt_v per block and case, where c_b(t_v) is the Q+ level of block b.
+    Q+ = -mu.E and the gap field of a series capacitor goes as 1/(a + b t_v), so
+    1/c_b is fitted linearly in t_v; if that fit is poor (max relative residual
+    > 1e-3) the slope comes from np.gradient of ln c_b instead.
+    Returns ({block: slopes (n_cases,)}, {block: description}).
+    """
+    slopes, how = {}, {}
+    if len(t_vals) < 2:
+        return slopes, how
+    for b in sorted(set().union(*levels)):
+        c = np.array([lv.get(b, 0.0) for lv in levels])
+        if c.max() == 0 or np.ptp(c) <= 1e-6 * c.max():
+            continue
+        if np.any(c <= 0):
+            how[b] = "Q+ vanishes in some cases; term skipped"
+            continue
+        A = np.column_stack([np.ones_like(t_vals), t_vals])
+        coef, *_ = np.linalg.lstsq(A, 1.0 / c, rcond=None)
+        resid = np.max(np.abs(A @ coef - 1.0 / c) * c)
+        if resid <= 1e-3:
+            slopes[b] = -coef[1] * c                      # d ln c/dt = -b / (a + b t) = -b c
+            how[b] = f"1/c linear in t_v (max rel. residual {resid:.1e})"
+        else:
+            order = np.argsort(t_vals)
+            g = np.empty_like(c)
+            g[order] = np.gradient(np.log(c[order]), t_vals[order])
+            slopes[b] = g
+            how[b] = f"finite differences of ln c (1/c not linear in t_v, residual {resid:.1e})"
+    return slopes, how
+
+
 def c_label(conv) -> str:
     return f"{conv[0]}, adjoint {'reversed' if conv[1] else 'same'}"
 
@@ -403,10 +475,15 @@ def main(data_dir: Path = DATA_DIR, out_dir: Path = OUT_DIR, adjoint_angles_reve
         raise ValueError("angle relabelling needs a quadrature symmetric about mu = 0")
 
     # ---- Pass 1: score every convention on every case (scores only). ----
-    scores = {}
+    scores, level_t, level_list, level_ids = {}, [], [], []
     for cid in sorted(case_key):
         loaded = load_case(cid)
-        if loaded is None or loaded[2] is None:
+        if loaded is None:
+            continue
+        level_ids.append(cid)
+        level_t.append(case_key[cid]["Void_Thickness"])
+        level_list.append(_source_levels(loaded[1], mu))
+        if loaded[2] is None:
             continue
         fwd_raw, src_raw, adj_raw, _ = loaded
         s = dump_length_per_key_length(fwd_raw, case_key[cid]["Void_Thickness"], cid)
@@ -452,6 +529,16 @@ def main(data_dir: Path = DATA_DIR, out_dir: Path = OUT_DIR, adjoint_angles_reve
             print("  WARNING: no convention gives a vacuum adjoint on the outer faces; "
                   "check the adjoint dump's boundary conditions and angle order.")
 
+    # ---- Q+ dependence on t_v (adds <dQ+/dt_v, psi> to dq/dt_v). ----
+    slopes, slope_how = _source_log_slopes(np.array(level_t, dtype=float), level_list)
+    if slope_how:
+        print("\nQ+ changes with t_v in block(s):")
+        for b, h in slope_how.items():
+            print(f"  block {b}: {h}")
+        print("  -> adding <dQ+/dt_v, psi> = sum_b (d ln c_b/dt_v) <Q+|_b, psi> to dq/dt_v")
+    slope_at = {cid: {b: float(v[level_ids.index(cid)]) for b, v in slopes.items()}
+                for cid in level_ids}
+
     # ---- Pass 2: q and dq/dt_v under that convention. ----
     rows, src_levels, scales, meshes = [], [], [], []
     for cid in sorted(case_key):
@@ -473,8 +560,9 @@ def main(data_dir: Path = DATA_DIR, out_dir: Path = OUT_DIR, adjoint_angles_reve
             print(f"  q = <Q+, psi>, case_key mesh= {q_key:.6e}")
 
         q = q_dump if q_mesh != "case_key" else q_key
-        q_b = dq_f = dq_a = np.nan
+        q_b = dq_f = dq_a = dq_use = np.nan
         status = STATUS_UNCHECKED
+        use_form = "adjoint"
         if adj_raw is None:
             print(f"  [no adjoint solution: {a_path.name}]")
         else:
@@ -482,13 +570,26 @@ def main(data_dir: Path = DATA_DIR, out_dir: Path = OUT_DIR, adjoint_angles_reve
             fwd, src, adj = relabel(fwd_raw, src_raw, adj_raw, *conv_use)
             q_b = sc["q_b"]
             print(f"  adjoint vacuum-face leak    = {sc['leak']:.2e}")
-            if not sc["applicable"]:
+            ps = _particle_split(fwd, adj, mu, w)
+            print(f"  photon share: max|psi+| photon/all = {ps['adj_photon_rel']:.2e};  entering current "
+                  f"photon {ps['jin_photon']:.3e}, electron {ps['jin_electron']:.3e};  boundary term "
+                  f"photon {ps['bt_photon']:+.3e}, electron {ps['bt_electron']:+.3e}")
+            electron_only = (ps["adj_photon_rel"] <= 1e-6
+                             and abs(ps["jin_photon"]) > 10 * abs(ps["jin_electron"]))
+            if electron_only:
+                use_form = "forward"
+                print("  The adjoint has no photon importance but photons carry the entering current, "
+                      "so it is an electron-only adjoint: photons act as a fixed electron source. "
+                      "The boundary identity cannot hold and is skipped; the adjoint form misses the "
+                      "source jump at the interface, so the forward form is used. Neither includes "
+                      "the change of photon attenuation with t_v; check with finite differences.")
+            elif not sc["applicable"]:
                 print("  boundary identity not applicable: no forward flux enters through the "
                       "faces, so the source is internal. Rely on a finite-difference check in t_v.")
             else:
                 print(f"  boundary term sum w|mu|psi+psi_in = {q_b:.6e}   identity miss: "
                       f"{sc['e_dump']:.2e} on dump mesh, {sc['e_key']:.2e} on case_key mesh")
-                if q_mesh == "auto":
+                if q_mesh == "auto" and sc["err"] <= IDENTITY_TOL:
                     mesh = "dump" if sc["e_dump"] <= sc["e_key"] else "case_key"
                     q = q_dump if mesh == "dump" else q_key
                     meshes.append(mesh)
@@ -505,15 +606,25 @@ def main(data_dir: Path = DATA_DIR, out_dir: Path = OUT_DIR, adjoint_angles_reve
             # width moves by s dump lengths per unit Void_Thickness.
             sens = void_thickness_sensitivity(fwd, adj, src, mu, w)
             dq_f, dq_a = s * sens["forward_form"], s * sens["adjoint_form"]
+            # <dQ+/dt_v, psi>, in the same length unit as q.
+            dsrc = 0.0
+            for b, slope in slope_at.get(cid, {}).items():
+                dsrc += slope * volume_inner_product(src_raw, fwd_raw, w, elem_mask=src_raw.block == b)
+            dsrc *= q / q_dump
+            if slope_at.get(cid):
+                print(f"  <dQ+/dt_v, psi>             = {dsrc:.6e}   (added to both forms)")
+            dq_f, dq_a = dq_f + dsrc, dq_a + dsrc
+            dq_use = dq_f if use_form == "forward" else dq_a
             print(f"  dq/dt_v forward form        = {dq_f:.6e}   (per case_key unit)")
             print(f"  dq/dt_v adjoint form        = {dq_a:.6e}   "
                   f"(forms differ by {abs(dq_f - dq_a) / max(abs(dq_a), 1e-300):.1%})")
+            print(f"  dq/dt_v used                = {dq_use:.6e}   ({use_form} form)")
             for k, it in enumerate(sens["interfaces"]):
                 print(f"    interface {k} at x={it['x']:.5f}: source {it['source']:+.3e}, "
                       f"operator fwd {it['operator_forward']:+.3e}, adj {it['operator_adjoint']:+.3e}")
         print(f"  q used                      = {q:.6e}   status: "
               f"{['identity OK', 'unchecked', 'identity FAILED'][status]}")
-        rows.append((cid, t_v, q, q_b, dq_f, dq_a, s, status))
+        rows.append((cid, t_v, q, q_b, dq_f, dq_a, s, status, dq_use))
 
     if len(src_levels) > 1:
         changed = []
@@ -521,10 +632,10 @@ def main(data_dir: Path = DATA_DIR, out_dir: Path = OUT_DIR, adjoint_angles_reve
             lv = np.array([d.get(b, 0.0) for d in src_levels])
             if lv.max() > 0 and np.ptp(lv) > 1e-6 * lv.max():
                 changed.append(f"{b} ({lv.min():.4g}..{lv.max():.4g})")
-        if changed:
+        if changed and not slopes:
             print("\nWARNING: the adjoint source Q+ changes between cases in block(s) "
-                  + ", ".join(changed) + ". Q+ then depends on t_v and dq/dt_v is missing a "
-                  "<dQ+/dt_v, psi> term.")
+                  + ", ".join(changed) + " but no slope could be fitted, so dq/dt_v is missing "
+                  "a <dQ+/dt_v, psi> term.")
     if len(scales) > 1 and np.ptp(scales) > 1e-3 * np.mean(scales):
         print("\nWARNING: dump void width / t_v varies between cases "
               f"({min(scales):.6g} to {max(scales):.6g}). Either case_key.txt does not match "
@@ -540,10 +651,11 @@ def main(data_dir: Path = DATA_DIR, out_dir: Path = OUT_DIR, adjoint_angles_reve
     out_path = out_dir / "qoi_void_adjoint.txt"
     np.savetxt(out_path, table,
                header="case_id void_thickness q q_boundary dq_dtv_forward_form "
-                      "dq_dtv_adjoint_form dump_per_key_length status\n"
-                      "dq_dtv_* are per unit of case_key Void_Thickness; "
-                      "status 0 = identity OK, 1 = unchecked (internal source), 2 = identity failed",
-               fmt=["%d"] + ["%.8e"] * 6 + ["%d"])
+                      "dq_dtv_adjoint_form dump_per_key_length status dq_dtv_used\n"
+                      "dq_dtv_* are per unit of case_key Void_Thickness and include <dQ+/dt_v, psi>; "
+                      "status 0 = identity OK, 1 = unchecked (internal source or electron-only "
+                      "adjoint), 2 = identity failed; dq_dtv_used is the form GE-GPR should use",
+               fmt=["%d"] + ["%.8e"] * 6 + ["%d", "%.8e"])
     counts = np.bincount(table[:, 7].astype(int), minlength=3) if len(rows) else [0, 0, 0]
     print(f"\nWrote {out_path}  ({len(rows)} case(s): {counts[0]} OK, {counts[1]} unchecked, "
           f"{counts[2]} failed)")

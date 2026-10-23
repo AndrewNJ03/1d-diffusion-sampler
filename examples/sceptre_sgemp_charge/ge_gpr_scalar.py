@@ -60,10 +60,10 @@ def load_adjoint_table(path: Path = None, allow_failed: bool = False):
     """
     path = Path(path) if path is not None else OUT_DIR / "qoi_void_adjoint.txt"
     table = np.atleast_2d(np.loadtxt(path, comments="#"))
-    if table.shape[1] < 8:
+    if table.shape[1] < 9:
         raise ValueError(f"{path} was written by an older void_sensitivity.py; rerun it")
     status = table[:, 7].astype(int)
-    has_grad = np.isfinite(table[:, 5])
+    has_grad = np.isfinite(table[:, 8])
     failed = has_grad & (status == 2)
     keep = has_grad & (allow_failed | (status != 2))
     for mask, why in ((~has_grad, "no adjoint gradient"),
@@ -73,9 +73,9 @@ def load_adjoint_table(path: Path = None, allow_failed: bool = False):
     unchecked = keep & (status == 1)
     if unchecked.any():
         print(f"{int(unchecked.sum())} case(s) not checked by the boundary identity (internal "
-              f"source): {table[unchecked, 0].astype(int).tolist()}")
+              f"source or electron-only adjoint): {table[unchecked, 0].astype(int).tolist()}")
     table = table[keep]
-    return table[:, 0].astype(int), table[:, 1:2], table[:, 2], table[:, 5]
+    return table[:, 0].astype(int), table[:, 1:2], table[:, 2], table[:, 8]
 
 
 def main(n_restarts: int = 10, out_dir: Path = OUT_DIR, gradient_source: str = "adjoint",

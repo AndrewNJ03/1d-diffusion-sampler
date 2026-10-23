@@ -18,6 +18,12 @@ Cases:
      real adjoint-source dumps)
   B. absorbing "void", Q+ jumps at the interface (exercises the source term
      and the void-side derivative)
+  C. as B, but driven by a fixed isotropic source in the dielectric only and
+     vacuum faces: the electron-only analogue of SCEPTRE's coupled problem
+     (photons acting as a fixed electron source that jumps at the interface).
+     The adjoint form misses the source jump here and does not converge; the
+     forward form is exact to second order. void_sensitivity.py uses the
+     forward form when it detects an electron-only adjoint.
 
 The finite difference perturbs t_v with a fixed number of cells per region
 (widths scale), so the mesh moves smoothly and the FD has no remeshing noise.
@@ -49,6 +55,8 @@ MATERIALS = {   # (Sigma_t, Sigma_s) [1/cm]
 CASES = {
     "A: vacuum void, uniform Q+": dict(void=(0.0, 0.0), c_diel=1.0, c_void=1.0),
     "B: absorbing void, Q+ jump": dict(void=(0.3, 0.1), c_diel=1.0 / 2.1, c_void=1.0),
+    "C: dielectric source, vacuum faces": dict(void=(0.3, 0.1), c_diel=1.0 / 2.1, c_void=1.0,
+                                               diel_source=1.0),
 }
 
 
@@ -90,9 +98,11 @@ def solve_case(t_v, cells_per_cm, n_angles, case):
     xl, xr, block, sig_t, sig_s, c = build_problem(t_v, cells_per_cm, case["void"],
                                                    case["c_diel"], case["c_void"])
     h = xr - xl
-    psi_inc = np.ones(n_angles)          # isotropic incoming flux on both faces
-
-    fl, fr = _solve(h, sig_t, sig_s, mu, w, psi_inc=psi_inc)
+    if case.get("diel_source"):          # fixed source in the dielectric, vacuum faces
+        S = np.where(np.isin(block, (DIEL_L, DIEL_R))[:, None], case["diel_source"], 0.0)
+        fl, fr = _solve(h, sig_t, sig_s, mu, w, angular_source=S * np.ones((1, n_angles)))
+    else:                                # isotropic incoming flux on both faces
+        fl, fr = _solve(h, sig_t, sig_s, mu, w, psi_inc=np.ones(n_angles))
     fwd = NodalField(xl, xr, block, fl, fr)
 
     q_src = c[:, None] * mu[None, :]     # Q+(i, a), constant per element
