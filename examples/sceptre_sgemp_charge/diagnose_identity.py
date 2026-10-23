@@ -23,8 +23,9 @@ import numpy as np
 
 from extract_qoi import DATA_DIR, gauss_lobatto, load_case_key, ELECTRON_GROUP_MIN
 from void_sensitivity import (
-    FORWARD_PATTERN, ADJOINT_SOURCE_PATTERN, ADJOINT_FLUX_PATTERN,
+    FORWARD_PATTERN, ADJOINT_SOURCE_PATTERN, ADJOINT_FLUX_PATTERN, CONVENTIONS,
     load_nodal_field, charge_functional, reverse_angles, dump_length_per_key_length,
+    _reverse, _vacuum_leak, _forward_vacuum_score,
 )
 
 BLOCK_NAMES = {1: "Shield_L", 2: "Diel_L", 3: "Void_L", 4: "Core",
@@ -84,10 +85,11 @@ def main(data_dir=DATA_DIR):
               f"   void width / t_v = s = {s:.6g}")
         print(f"  shapes: fwd {fwd.left.shape}  Q+ {src.left.shape}  adj {adj.left.shape}  (E, G, A)")
 
-        # 1. Is the forward problem boundary-driven?
+        # 1. Is the forward problem boundary-driven? (in/out as labelled ascending)
         jl_in, jl_out, jr_in, jr_out = partial_currents(fwd, mu, w)
-        print(f"  [1] forward partial currents: left face in {jl_in:.3e} / out {jl_out:.3e};"
-              f"  right face in {jr_in:.3e} / out {jr_out:.3e}")
+        print(f"  [1] forward partial currents, angle index read ascending: left face in {jl_in:.3e}"
+              f" / out {jl_out:.3e};  right face in {jr_in:.3e} / out {jr_out:.3e}"
+              "  (descending swaps in and out)")
 
         # 2./3. Adjoint vacuum faces: psi+ should vanish where the forward flux LEAVES.
         for name, a in (("same mu", adj), ("reversed mu", reverse_angles(adj, mu))):
@@ -109,12 +111,22 @@ def main(data_dir=DATA_DIR):
         bl_r, br_r = boundary_terms(fwd, reverse_angles(adj, mu), mu, w)
         qb_s, qb_r = bl_s + br_s, bl_r + br_r
         print(f"  q = <Q+,psi> on dump mesh      = {q_dump:+.6e}")
-        print(f"  q = <Q+,psi> on case_key mesh  = {q_dump / s:+.6e}   (what void_sensitivity.py now uses)")
+        print(f"  q = <Q+,psi> on case_key mesh  = {q_dump / s:+.6e}")
         print(f"  boundary term, same mu         = {qb_s:+.6e}   (left {bl_s:+.3e}, right {br_s:+.3e})")
         print(f"  boundary term, reversed mu     = {qb_r:+.6e}   (left {bl_r:+.3e}, right {br_r:+.3e})")
         for name, qb in (("same", qb_s), ("reversed", qb_r)):
             print(f"  [4] {name:8s}: boundary / q_dump = {qb / q_dump:+.5g}   "
                   f"boundary / q_case_key = {qb / (q_dump / s):+.5g}")
+        print("  [3] all angle conventions (forward + Q+ in the dump order, adjoint same or reversed):")
+        print("      convention                 adj vacuum leak  fwd vacuum face  boundary/q_dump")
+        for order, rel_rev in CONVENTIONS:
+            f = _reverse(fwd) if order == "descending" else fwd
+            a = _reverse(adj) if order == "descending" else adj
+            a = _reverse(a) if rel_rev else a
+            bl, br = boundary_terms(f, a, mu, w)
+            print(f"      {order:10s} adj {'reversed' if rel_rev else 'same    '}     "
+                  f"{_vacuum_leak(a, mu):.2e}         {_forward_vacuum_score(f, mu, w):.2e}         "
+                  f"{(bl + br) / q_dump:+.5g}")
         rows.append((cid, s, L, q_dump, qb_s, qb_r, jl_in + jr_in, jl_out + jr_out))
         print()
 

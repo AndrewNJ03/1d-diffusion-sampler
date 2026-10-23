@@ -258,11 +258,19 @@ def void_thickness_sensitivity(fwd: NodalField, adj: NodalField, src: NodalField
 # Driver                                                                      #
 # --------------------------------------------------------------------------- #
 
-def _gap_source_level(src: NodalField, mu: np.ndarray) -> float:
-    """Mean |Q+ / mu| over gap elements and nonzero entries, to compare cases."""
-    gap = np.isin(src.block, GAP_BLOCKS)
-    vals = np.abs(src.average()[gap] / mu[None, None, :])
-    return float(vals[vals > 0].mean())
+def _source_levels(src: NodalField, mu: np.ndarray) -> dict:
+    """Mean |Q+ / mu| over the nonzero entries of each block, to compare cases."""
+    vals = np.abs(src.average() / mu[None, None, :])
+    out = {}
+    for b in np.unique(src.block):
+        v = vals[src.block == b]
+        out[int(b)] = float(v[v > 0].mean()) if np.any(v > 0) else 0.0
+    return out
+
+
+def _reverse(field: NodalField) -> NodalField:
+    """Relabel angle index a -> A-1-a (no quadrature check; mu stays ascending)."""
+    return field.with_values(field.left[..., ::-1], field.right[..., ::-1])
 
 
 def dump_length_per_key_length(field: NodalField, t_v_key: float, cid: int = -1) -> float:
@@ -306,21 +314,59 @@ def _incoming_fraction(fwd: NodalField, mu: np.ndarray, w: np.ndarray) -> float:
     return float(abs(j_in) / max(abs(j_in) + abs(j_out), 1e-300))
 
 
-def main(data_dir: Path = DATA_DIR, out_dir: Path = OUT_DIR, adjoint_angles_reversed=None,
-         q_mesh: str = "auto"):
+def _forward_vacuum_score(fwd: NodalField, mu: np.ndarray, w: np.ndarray) -> float:
     """
-    adjoint_angles_reversed: None picks the convention whose adjoint dump obeys
-        the vacuum condition; True/False forces it.
+    min over the two faces of (current entering) / (entering + leaving). Small
+    when at least one face is vacuum under this angle labelling; a wrong
+    labelling swaps entering and leaving, so the vacuum face looks like a source.
+    """
+    wa = w * np.abs(mu)
+    left_in = np.einsum("ga,a->", fwd.left[0][:, mu > 0], wa[mu > 0])
+    left_out = np.einsum("ga,a->", fwd.left[0][:, mu < 0], wa[mu < 0])
+    right_in = np.einsum("ga,a->", fwd.right[-1][:, mu < 0], wa[mu < 0])
+    right_out = np.einsum("ga,a->", fwd.right[-1][:, mu > 0], wa[mu > 0])
+    fl = abs(left_in) / max(abs(left_in) + abs(left_out), 1e-300)
+    fr = abs(right_in) / max(abs(right_in) + abs(right_out), 1e-300)
+    return float(min(fl, fr))
+
+
+def c_label(conv) -> str:
+    return f"{conv[0]}, adjoint {'reversed' if conv[1] else 'same'}"
+
+
+CONVENTIONS = [  # (dump angle order, adjoint relabelled relative to forward)
+    ("ascending", False), ("ascending", True), ("descending", False), ("descending", True),
+]
+
+
+def main(data_dir: Path = DATA_DIR, out_dir: Path = OUT_DIR, adjoint_angles_reversed=None,
+         q_mesh: str = "auto", angle_order: str = "auto"):
+    """
+    angle_order: "ascending" (index 0 is mu = -1), "descending" (index 0 is
+        mu = +1), or "auto". Applies to all three dumps (forward, Q+, adjoint).
+    adjoint_angles_reversed: True if the adjoint dump's index is reversed
+        relative to the forward dump's; None ("auto") to determine it.
     q_mesh: which length unit q = <Q+, psi> is integrated in.
         "dump"     the dumps' own x (right whenever the CSVs carry the SCEPTRE
                    mesh coordinates, e.g. from exodus_to_csv.py),
         "case_key" x rescaled so the void width equals Void_Thickness (right only
                    if the dumps' x was normalised after the solve),
         "auto"     let the boundary identity choose when it applies, else "dump".
-    dq/dt_v does not depend on this choice: it is always per unit Void_Thickness.
+    dq/dt_v does not depend on q_mesh: it is always per unit Void_Thickness.
+
+    Angle convention ("auto"), chosen once for all cases since the dumps come
+    from one code: the adjoint must vanish on the faces where the forward flux
+    leaves; that fixes the adjoint's orientation but not whether the dumps are
+    ascending with a reversed adjoint, or descending with the same order
+    throughout. Between those, the convention under which the boundary identity
+    holds in the most cases wins; if it holds in none, the labelling whose
+    forward flux has a vacuum face. q does not depend on the convention;
+    dq/dt_v does.
     """
     if q_mesh not in ("auto", "dump", "case_key"):
         raise ValueError("q_mesh must be 'auto', 'dump' or 'case_key'")
+    if angle_order not in ("auto", "ascending", "descending"):
+        raise ValueError("angle_order must be 'auto', 'ascending' or 'descending'")
     data_dir, out_dir = Path(data_dir), Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     mu, w = gauss_lobatto(8)
@@ -330,23 +376,95 @@ def main(data_dir: Path = DATA_DIR, out_dir: Path = OUT_DIR, adjoint_angles_reve
     print("dq/dt_v from forward + adjoint dumps (fixed outer radius)")
     print("=" * 72)
 
-    rows, gap_levels, scales, meshes = [], [], [], []
+    def load_case(cid):
+        paths = [data_dir / pat.format(cid) for pat in
+                 (FORWARD_PATTERN, ADJOINT_SOURCE_PATTERN, ADJOINT_FLUX_PATTERN)]
+        if not (paths[0].exists() and paths[1].exists()):
+            return None
+        fwd_raw, src_raw = load_nodal_field(paths[0]), load_nodal_field(paths[1])
+        if not same_mesh(fwd_raw, src_raw):
+            raise ValueError(f"case {cid}: forward and adjoint-source meshes differ")
+        adj_raw = load_nodal_field(paths[2]) if paths[2].exists() else None
+        if adj_raw is not None and not same_mesh(fwd_raw, adj_raw):
+            raise ValueError(f"case {cid}: forward and adjoint meshes differ")
+        return fwd_raw, src_raw, adj_raw, paths[2]
+
+    def relabel(fwd_raw, src_raw, adj_raw, order, rel_rev):
+        desc = order == "descending"
+        f = _reverse(fwd_raw) if desc else fwd_raw
+        sr = _reverse(src_raw) if desc else src_raw
+        a = _reverse(adj_raw) if desc else adj_raw
+        return f, sr, (_reverse(a) if rel_rev else a)
+
+    convs = [c for c in CONVENTIONS
+             if (angle_order == "auto" or c[0] == angle_order)
+             and (adjoint_angles_reversed is None or c[1] == bool(adjoint_angles_reversed))]
+    if not np.allclose(mu, -mu[::-1]):
+        raise ValueError("angle relabelling needs a quadrature symmetric about mu = 0")
+
+    # ---- Pass 1: score every convention on every case (scores only). ----
+    scores = {}
     for cid in sorted(case_key):
-        f_path = data_dir / FORWARD_PATTERN.format(cid)
-        s_path = data_dir / ADJOINT_SOURCE_PATTERN.format(cid)
-        a_path = data_dir / ADJOINT_FLUX_PATTERN.format(cid)
+        loaded = load_case(cid)
+        if loaded is None or loaded[2] is None:
+            continue
+        fwd_raw, src_raw, adj_raw, _ = loaded
+        s = dump_length_per_key_length(fwd_raw, case_key[cid]["Void_Thickness"], cid)
+        q_dump = charge_functional(fwd_raw, src_raw, w)   # same under any common relabelling
+        q_key = q_dump / s
+        per = {}
+        for conv in convs:
+            f, _, a = relabel(fwd_raw, src_raw, adj_raw, *conv)
+            qb = boundary_functional(f, a, mu, w)
+            applicable = _incoming_fraction(f, mu, w) >= 1e-8 and qb != 0.0
+            e_dump = abs(qb - q_dump) / abs(q_dump) if applicable else np.inf
+            e_key = abs(qb - q_key) / abs(q_key) if applicable else np.inf
+            per[conv] = dict(q_b=qb, leak=_vacuum_leak(a, mu), fvac=_forward_vacuum_score(f, mu, w),
+                             applicable=applicable, e_dump=e_dump, e_key=e_key,
+                             err=min(e_dump, e_key) if q_mesh == "auto"
+                             else (e_dump if q_mesh == "dump" else e_key))
+        scores[cid] = per
+
+    # ---- One convention for all cases: the dumps come from one code. ----
+    conv_use, how = None, ""
+    if scores:
+        med_leak = {c: float(np.median([scores[k][c]["leak"] for k in scores])) for c in convs}
+        best = min(med_leak.values())
+        ok = [c for c in convs if med_leak[c] <= max(10 * best, 1e-6)]
+        votes = {c: sum(scores[k][c]["applicable"] and scores[k][c]["err"] <= IDENTITY_TOL
+                        for k in scores) for c in ok}
+        if max(votes.values()) > 0:
+            conv_use = max(ok, key=lambda c: (votes[c], -c[1]))
+            how = f"boundary identity holds in {votes[conv_use]}/{len(scores)} case(s)"
+        else:
+            fv = {c: float(np.median([scores[k][c]["fvac"] for k in scores])) for c in ok}
+            conv_use = min(ok, key=lambda c: (fv[c], c[1]))
+            how = "forward vacuum face (boundary identity holds in no case)"
+        print("\nAngle convention, medians over cases:")
+        print("  convention               adj vacuum leak  fwd vacuum face  identity OK in")
+        for c in convs:
+            fvm = float(np.median([scores[k][c]["fvac"] for k in scores]))
+            n_ok = sum(scores[k][c]["applicable"] and scores[k][c]["err"] <= IDENTITY_TOL for k in scores)
+            print(f"    {c[0]:10s} adj {'reversed' if c[1] else 'same    '}   {med_leak[c]:.2e}"
+                  f"         {fvm:.2e}         {n_ok}/{len(scores)}")
+        print(f"  -> using {c_label(conv_use)}  (chosen by {how})")
+        if best > 1e-3:
+            print("  WARNING: no convention gives a vacuum adjoint on the outer faces; "
+                  "check the adjoint dump's boundary conditions and angle order.")
+
+    # ---- Pass 2: q and dq/dt_v under that convention. ----
+    rows, src_levels, scales, meshes = [], [], [], []
+    for cid in sorted(case_key):
         t_v = case_key[cid]["Void_Thickness"]
-        if not (f_path.exists() and s_path.exists()):
+        loaded = load_case(cid)
+        if loaded is None:
             print(f"\nCase {cid:04d}: [skip] forward or adjoint-source dump missing")
             continue
-
-        fwd, src = load_nodal_field(f_path), load_nodal_field(s_path)
-        if not same_mesh(fwd, src):
-            raise ValueError(f"case {cid}: forward and adjoint-source meshes differ")
-        s = dump_length_per_key_length(fwd, t_v, cid)
+        fwd_raw, src_raw, adj_raw, a_path = loaded
+        s = dump_length_per_key_length(fwd_raw, t_v, cid)
         scales.append(s)
-        gap_levels.append(_gap_source_level(src, mu))
-        q_dump = charge_functional(fwd, src, w)
+        src_levels.append(_source_levels(src_raw, mu))
+        q_dump = charge_functional(fwd_raw, src_raw, w)
         q_key = q_dump / s
         print(f"\nCase {cid:04d}  t_v = {t_v:.6g}")
         print(f"  dump void width / t_v       = {s:.6g}  (dump x per case_key length unit)")
@@ -357,50 +475,31 @@ def main(data_dir: Path = DATA_DIR, out_dir: Path = OUT_DIR, adjoint_angles_reve
         q = q_dump if q_mesh != "case_key" else q_key
         q_b = dq_f = dq_a = np.nan
         status = STATUS_UNCHECKED
-        if a_path.exists():
-            adj = load_nodal_field(a_path)
-            if not same_mesh(fwd, adj):
-                raise ValueError(f"case {cid}: forward and adjoint meshes differ")
-
-            # Angle convention of the adjoint dump, from its vacuum faces.
-            leak_same = _vacuum_leak(adj, mu)
-            leak_rev = _vacuum_leak(reverse_angles(adj, mu), mu)
-            reverse = (leak_rev < leak_same) if adjoint_angles_reversed is None \
-                else adjoint_angles_reversed
-            print(f"  adjoint vacuum-face leak    = {leak_same:.2e} (same mu), {leak_rev:.2e} (reversed)"
-                  f"  -> using {'reversed' if reverse else 'same'} mu")
-            if min(leak_same, leak_rev) > 1e-3:
-                print("  WARNING: neither angle convention gives a vacuum adjoint on the outer faces; "
-                      "check the adjoint dump's boundary conditions and angle order.")
-            if reverse:
-                adj = reverse_angles(adj, mu)
-
-            # Boundary identity: a check only if the forward flux enters through the faces.
-            q_b = boundary_functional(fwd, adj, mu, w)
-            frac_in = _incoming_fraction(fwd, mu, w)
-            print(f"  boundary term sum w|mu|psi+psi_in = {q_b:.6e}   "
-                  f"(forward current entering / total at faces: {frac_in:.2e})")
-            if frac_in < 1e-8 or q_b == 0.0:
+        if adj_raw is None:
+            print(f"  [no adjoint solution: {a_path.name}]")
+        else:
+            sc = scores[cid][conv_use]
+            fwd, src, adj = relabel(fwd_raw, src_raw, adj_raw, *conv_use)
+            q_b = sc["q_b"]
+            print(f"  adjoint vacuum-face leak    = {sc['leak']:.2e}")
+            if not sc["applicable"]:
                 print("  boundary identity not applicable: no forward flux enters through the "
-                      "faces, so the source is internal. q and dq/dt_v are not checked by it; "
-                      "rely on a finite-difference check in t_v.")
+                      "faces, so the source is internal. Rely on a finite-difference check in t_v.")
             else:
-                e_dump = abs(q_b - q_dump) / abs(q_dump)
-                e_key = abs(q_b - q_key) / abs(q_key)
-                print(f"  identity miss: {e_dump:.2e} on dump mesh, {e_key:.2e} on case_key mesh")
-                best = "dump" if e_dump <= e_key else "case_key"
-                err = min(e_dump, e_key) if q_mesh == "auto" else (e_dump if q_mesh == "dump" else e_key)
+                print(f"  boundary term sum w|mu|psi+psi_in = {q_b:.6e}   identity miss: "
+                      f"{sc['e_dump']:.2e} on dump mesh, {sc['e_key']:.2e} on case_key mesh")
                 if q_mesh == "auto":
-                    q = q_dump if best == "dump" else q_key
-                    meshes.append(best)
-                if err <= IDENTITY_TOL:
+                    mesh = "dump" if sc["e_dump"] <= sc["e_key"] else "case_key"
+                    q = q_dump if mesh == "dump" else q_key
+                    meshes.append(mesh)
+                if sc["err"] <= IDENTITY_TOL:
                     status = STATUS_OK
                 else:
                     status = STATUS_FAILED
-                    print(f"  WARNING: boundary identity misses q by {err:.1%} on either mesh. With "
-                          "forward flux entering the faces this points to a forward volume source "
-                          "as well, an adjoint that is not the adjoint of this forward problem, or "
-                          "an angle-order mismatch. Run diagnose_identity.py.")
+                    print(f"  WARNING: boundary identity misses q by {sc['err']:.1%}. Flux enters "
+                          "through the faces, so this points to a forward volume source as well, "
+                          "an adjoint of a different problem, or a discretization problem at the "
+                          "boundary. Run diagnose_identity.py.")
 
             # Interface formula on the dump mesh gives dq/dx_i per dump length; the void
             # width moves by s dump lengths per unit Void_Thickness.
@@ -412,15 +511,20 @@ def main(data_dir: Path = DATA_DIR, out_dir: Path = OUT_DIR, adjoint_angles_reve
             for k, it in enumerate(sens["interfaces"]):
                 print(f"    interface {k} at x={it['x']:.5f}: source {it['source']:+.3e}, "
                       f"operator fwd {it['operator_forward']:+.3e}, adj {it['operator_adjoint']:+.3e}")
-        else:
-            print(f"  [no adjoint solution: {a_path.name}]")
         print(f"  q used                      = {q:.6e}   status: "
               f"{['identity OK', 'unchecked', 'identity FAILED'][status]}")
         rows.append((cid, t_v, q, q_b, dq_f, dq_a, s, status))
 
-    if len(gap_levels) > 1 and np.ptp(gap_levels) > 1e-8 * max(gap_levels):
-        print("\nWARNING: the adjoint source in the gap changes between cases, so Q+ depends "
-              "on t_v and the derivative is missing a <dQ+/dt_v, psi> term.")
+    if len(src_levels) > 1:
+        changed = []
+        for b in sorted(set().union(*src_levels)):
+            lv = np.array([d.get(b, 0.0) for d in src_levels])
+            if lv.max() > 0 and np.ptp(lv) > 1e-6 * lv.max():
+                changed.append(f"{b} ({lv.min():.4g}..{lv.max():.4g})")
+        if changed:
+            print("\nWARNING: the adjoint source Q+ changes between cases in block(s) "
+                  + ", ".join(changed) + ". Q+ then depends on t_v and dq/dt_v is missing a "
+                  "<dQ+/dt_v, psi> term.")
     if len(scales) > 1 and np.ptp(scales) > 1e-3 * np.mean(scales):
         print("\nWARNING: dump void width / t_v varies between cases "
               f"({min(scales):.6g} to {max(scales):.6g}). Either case_key.txt does not match "
@@ -429,6 +533,8 @@ def main(data_dir: Path = DATA_DIR, out_dir: Path = OUT_DIR, adjoint_angles_reve
     if len(set(meshes)) > 1:
         print("\nWARNING: the boundary identity picked different q meshes for different cases "
               f"({meshes}); q values are on mixed units. Force q_mesh='dump' or 'case_key'.")
+    if conv_use is not None:
+        print(f"\nAngle convention used for every case: {c_label(conv_use)}")
 
     table = np.array(rows, dtype=float)
     out_path = out_dir / "qoi_void_adjoint.txt"
@@ -445,6 +551,7 @@ def main(data_dir: Path = DATA_DIR, out_dir: Path = OUT_DIR, adjoint_angles_reve
 
 
 if __name__ == "__main__":
-    # python3 void_sensitivity.py [DATA_DIR] [auto|dump|case_key]
+    # python3 void_sensitivity.py [DATA_DIR] [auto|dump|case_key] [auto|ascending|descending]
     main(data_dir=sys.argv[1] if len(sys.argv) > 1 else DATA_DIR,
-         q_mesh=sys.argv[2] if len(sys.argv) > 2 else "auto")
+         q_mesh=sys.argv[2] if len(sys.argv) > 2 else "auto",
+         angle_order=sys.argv[3] if len(sys.argv) > 3 else "auto")

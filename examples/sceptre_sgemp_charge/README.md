@@ -19,7 +19,7 @@ $q_\text{net}$ on the coaxial Core/Void/Teflon/Shield geometry that
 | `gpr_scalar_void_sweep.py` | Learning curve, 999-case $t_v$ sweep, reading `summary(1).csv` directly |
 | `gpr_scalar_geometry_grid.py` | Learning curve, 1000-case $10^3$ thickness grid, reading `summary(2).csv` directly |
 | `void_sensitivity.py` | Adjoint derivative $dq/dt_v$ from forward + adjoint flux dumps of `constantR_void_10`; writes `output/qoi_void_adjoint.txt` |
-| `diagnose_identity.py` | Per-case checks behind the boundary identity (incoming current, adjoint vacuum faces, units, $Q^\dagger\psi$ by block) |
+| `diagnose_identity.py` | Per-case checks behind the boundary identity (incoming current, adjoint vacuum faces, units, $Q^\dagger\psi$ by block, all four angle conventions) |
 | `verify_void_sensitivity.py` | Checks the $dq/dt_v$ formula against finite differences on a synthetic S_N slab (`sn_transport/`) |
 
 ---
@@ -186,10 +186,27 @@ The derivatives are the streaming integrals of the elements touching $x_i$,
 including the upwind face jump. A forward-flux form is also reported as a
 diagnostic.
 
-**Angle convention.** The adjoint must vanish on the outer faces in the
-directions where the forward flux leaves ($\mu<0$ on the left, $\mu>0$ on the
-right). The script measures that leak under both angle orders and uses the one
-that vanishes. This does not depend on units or sources.
+**Angle convention.** The code assumed angle index 0 is $\mu=-1$ (ascending).
+SCEPTRE's dumps can be descending, and the adjoint dump can be relabelled
+relative to the forward one. `void_sensitivity.py` scores all four
+combinations (ascending/descending for all three dumps × adjoint same/reversed)
+and picks **one for all cases**:
+1. the adjoint must vanish on the faces where the forward flux leaves (this
+   fixes the adjoint's orientation, leaving two candidates);
+2. of those, the one under which the boundary identity holds in the most cases;
+3. if it holds in none, the one whose forward flux has a vacuum face (a wrong
+   labelling swaps entering and leaving current, so a vacuum face looks like a
+   source).
+
+Force it with `python3 void_sensitivity.py DATA_DIR auto descending` (or
+`main(angle_order=..., adjoint_angles_reversed=...)`). $q=\langle Q^\dagger,\psi\rangle$
+does not depend on the convention, but $dq/dt_v$ does: on synthetic descending
+dumps, treating them as ascending with a reversed adjoint gave the gradient the
+wrong sign (−1.05e-2 against a true +1.20e-2) while $q$ was unchanged, and the
+identity failed on every case by 85%. With detection, all four labellings give
+$q$ exact and $dq/dt_v$ within 3e-8 of finite differences. `extract_qoi.py`'s
+$q_\text{net}$ still assumes ascending order; under descending dumps its sign
+flips (it is not used by the GE-GPR path).
 
 **Units.** $s$ is the dump's void width divided by `Void_Thickness`
 (column `dump_per_key_length`). The interface formula gives $dq/dx_i$ per dump
@@ -274,7 +291,7 @@ cd examples/sceptre_sgemp_charge
 python3 exodus_to_csv.py --batch ...   # §6, once per data set
 python3 extract_qoi.py
 python3 gpr_scalar.py
-python3 void_sensitivity.py      # writes output/qoi_void_adjoint.txt ([DATA_DIR] [auto|dump|case_key])
+python3 void_sensitivity.py      # writes output/qoi_void_adjoint.txt ([DATA_DIR] [auto|dump|case_key] [auto|ascending|descending])
 python3 diagnose_identity.py     # only if cases show status 2
 python3 ge_gpr_scalar.py         # adjoint values + gradients (default)
 python3 ge_gpr_scalar.py fd      # q_net + finite-difference placeholder
