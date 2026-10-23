@@ -459,6 +459,13 @@ def compare_reference_q(rows, path) -> None:
         print("  no case ids in common")
 
 
+def _looks_like_potential(src: NodalField) -> bool:
+    """True if the 'source' is the same for every angle: a scalar field, not Q+ = -mu.E."""
+    scale = max(np.abs(src.left).max(), np.abs(src.right).max(), 1e-300)
+    return bool(np.ptp(src.left, axis=2).max() <= 1e-12 * scale
+                and np.ptp(src.right, axis=2).max() <= 1e-12 * scale)
+
+
 def c_label(conv) -> str:
     return f"{conv[0]}, adjoint {'reversed' if conv[1] else 'same'}"
 
@@ -533,6 +540,11 @@ def main(data_dir: Path = DATA_DIR, out_dir: Path = OUT_DIR, adjoint_angles_reve
         if not (paths[0].exists() and paths[1].exists()):
             return None
         fwd_raw, src_raw = load_nodal_field(paths[0]), load_nodal_field(paths[1])
+        if _looks_like_potential(src_raw):
+            raise ValueError(
+                f"case {cid}: {paths[1].name} is the same for every angle, so it is SCEPTRE's "
+                "adjoint-source potential, not the angular source Q+ = -mu.E. Convert it first: "
+                "python3 potential_to_source.py DATA_DIR --angle-order descending")
         if not same_mesh(fwd_raw, src_raw):
             raise ValueError(f"case {cid}: forward and adjoint-source meshes differ")
         adj_raw = load_nodal_field(paths[2]) if paths[2].exists() else None
@@ -677,12 +689,16 @@ def main(data_dir: Path = DATA_DIR, out_dir: Path = OUT_DIR, adjoint_angles_reve
                 print(f"  boundary term sum w|mu|psi+psi_in = {q_b:.6e}   identity miss: "
                       f"{sc['e_dump']:.2e} on dump mesh, {sc['e_key']:.2e} on case_key mesh")
                 if q_mesh == "auto" and sc["err"] <= IDENTITY_TOL:
-                    mesh = "dump" if sc["e_dump"] <= sc["e_key"] else "case_key"
+                    mesh = ("dump" if sc["e_dump"] <= sc["e_key"] or np.isclose(s, 1.0, rtol=1e-6)
+                            else "case_key")
                     q = q_dump if mesh == "dump" else q_key
                     len_factor = 1.0 if mesh == "dump" else 1.0 / s
                     meshes.append(mesh)
                 if sc["err"] <= IDENTITY_TOL:
                     status = STATUS_OK
+                elif q_source == "boundary":
+                    print(f"  (the Q+ dump misses the boundary term by {sc['err']:.1%}; expected "
+                          "with --q-source boundary, which does not use the dump for q)")
                 else:
                     status = STATUS_FAILED
                     identity_failures.append(cid)
@@ -733,7 +749,7 @@ def main(data_dir: Path = DATA_DIR, out_dir: Path = OUT_DIR, adjoint_angles_reve
             lv = np.array([d.get(b, 0.0) for d in src_levels])
             if lv.max() > 0 and np.ptp(lv) > 1e-6 * lv.max():
                 changed.append(f"{b} ({lv.min():.4g}..{lv.max():.4g})")
-        if changed and not slopes:
+        if changed and not slopes and use_source_term:
             print("\nWARNING: the adjoint source Q+ changes between cases in block(s) "
                   + ", ".join(changed) + " but no slope could be fitted, so dq/dt_v is missing "
                   "a <dQ+/dt_v, psi> term.")

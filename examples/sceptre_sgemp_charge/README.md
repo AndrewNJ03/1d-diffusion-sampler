@@ -12,6 +12,7 @@ $q_\text{net}$ on the coaxial Core/Void/Teflon/Shield geometry that
 
 | File | Role |
 |---|---|
+| `potential_to_source.py` | SCEPTRE's adjoint-source potential $\phi$ → angular source $Q^\dagger=\mu\,d\phi/dx$, in place (run once before `void_sensitivity.py`) |
 | `exodus_to_csv.py` | SCEPTRE Exodus `psi_g_0_a_0_n` element variables → the per-element CSVs below (forward, adjoint flux, optionally adjoint source); single-file, `--list` and `--batch` modes |
 | `extract_qoi.py` | Raw angular flux → electron current → $q_\text{net}$ for each `case_*_forward_1d.csv`; writes `output/qoi_scalar.txt` |
 | `gpr_scalar.py` | Standard GPR on the pilot table |
@@ -273,31 +274,48 @@ not the adjoint's source, so their $t_v$ dependence says nothing about it. Cases
 are marked status 1. On the synthetic spike data this recovers $q$ exactly and
 the gradient to 1e-7.
 
-**SCEPTRE runs (constantR_void_10).** SCEPTRE's `q_directdrive` for cases 0 and 1
-(2.2433e-8, 1.0612e-8) is half the boundary term (4.489e-8, 2.160e-8: 0.05% and
-1.8%) and half of $\langle Q^\dagger,\psi\rangle$ with the *original* adjoint-source
-dumps (4.49e-8, 2.12e-8). So SCEPTRE's QoI, its adjoint flux and those original
-dumps agree; the later field-tool dumps (`case_*_adjoint_1d.csv`, with a large
-core contribution and a $t_v$-dependent gap field) are not the source SCEPTRE
-uses. The factor 2 is the angular weight normalisation: SCEPTRE's weights sum to
-1, this script's to 2 (`--weight-sum 1` matches SCEPTRE; $q$ and $dq/dt_v$ both
-scale with it). The original source was $c\,\mu$ with $c=0.4439$ uniform over void
-and dielectric in both cases, i.e. independent of $t_v$, so no
-$\langle\partial Q^\dagger/\partial t_v,\psi\rangle$ term. Until the original-style
-source is dumped for every case, run
+**SCEPTRE's adjoint-source files are a potential, not Q⁺.** The field tool's
+output (what SCEPTRE's adjoint mode and `q_directdrive` read) is a nodal scalar
+field $\phi$: continuous, identical for every angle and electron group, zero for
+photons. In the SGEMP runs it is linear through void and dielectric (slope
+0.443896) and takes up the rest of the 1 V drop in the conductor element next
+to each interface ($\phi=1$ in the core, 0 in the shields). SCEPTRE's source is
+
+$$Q^\dagger_{e,g,a} = -\mu_a E_e = \mu_a\,\frac{d\phi}{dx}\Big|_e,$$
+
+constant per element: $c\,\mu$ with $c=0.443896$ over void and dielectric plus
+one-element spikes (~45) in the shield and core elements bordering the gap, the
+structure of the original adjoint-source dumps. Reading $\phi$ itself as $Q^\dagger$
+gave $\langle Q^\dagger,\psi\rangle$ ≈ 18× too large, 94% of it from $\phi=1$ across the
+core. `potential_to_source.py DATA_DIR --angle-order descending` converts every
+case in place (the potential is kept as `case_XXXX_adjoint_potential_1d.csv`;
+already-converted files are skipped), and `void_sensitivity.py` refuses a
+source that is the same for every angle.
+
+**Angular weights.** SCEPTRE's `q_directdrive` for cases 0 and 1 (2.2433e-8,
+1.0612e-8) is half of $\langle Q^\dagger,\psi\rangle$ with the original source dumps
+(4.49e-8, 2.12e-8): SCEPTRE's weights sum to 1, this script's to 2. Use
+`--weight-sum 1` to match; $q$ and $dq/dt_v$ scale together. The source is
+$t_v$-independent here (fixed gap, uniform $c$), so the
+$\langle\partial Q^\dagger/\partial t_v,\psi\rangle$ term vanishes.
+
+**Run for SCEPTRE data:**
 
 ```bash
-python3 void_sensitivity.py DATA_DIR --q-source boundary --weight-sum 1 \
-    [--reference-q qdd.txt]
+python3 potential_to_source.py DATA_DIR --angle-order descending   # once
+python3 void_sensitivity.py DATA_DIR --weight-sum 1 [--reference-q qdd.txt]
+python3 ge_gpr_scalar.py
 ```
 
 `--reference-q` takes a two-column file `case_id q` (e.g. SCEPTRE's
 `q_directdrive` per case) and prints the comparison. On synthetic data built
-this way (adjoint from a uniform $t_v$-independent source, dump from a
-$t_v$-dependent field with a core spike), this reproduces the reference $q$
-exactly and $dq/dt_v$ to 6e-8; forcing the source term on instead puts the
-gradients off by up to 6× and the cross-case check flags it (median 120%
-against 1%).
+like SCEPTRE's (potential file, 38 groups, photon groups empty, descending
+angles, conductor spikes), this gives the boundary identity in 10/10 cases,
+$q$ equal to the reference to 5e-13, and $dq/dt_v$ to 4e-8. `--q-source
+boundary` remains as a fallback when no usable source file exists: $q$ is then
+the boundary term (consistent with the adjoint flux) and the source term is off
+by default; the cross-case check flags a wrong source-term setting (median 120%
+against 1% on synthetic data).
 
 **Cross-case check.** At the end, `void_sensitivity.py` compares each case's
 $dq/dt_v$ with finite differences of $q$ between the cases themselves
@@ -381,6 +399,7 @@ by bare name, so run them from this directory:
 ```bash
 cd examples/sceptre_sgemp_charge
 python3 exodus_to_csv.py --batch ...   # §6, once per data set
+python3 potential_to_source.py DATA_DIR --angle-order descending   # once, SCEPTRE potential -> Q+
 python3 extract_qoi.py
 python3 gpr_scalar.py
 python3 void_sensitivity.py      # writes output/qoi_void_adjoint.txt; --help for options
