@@ -12,7 +12,7 @@ $q_\text{net}$ on the coaxial Core/Void/Teflon/Shield geometry that
 
 | File | Role |
 |---|---|
-| `collect_exodus_results.py` | Case directories of `forward_1d.exo`, `adjoint_transport_1d.exo` and `response_1d.exo` → the per-case CSVs in one data directory, with mesh and case id checks; resumable ([§8.1](#81-workflow)) |
+| `collect_exodus_results.py` | Case directories of `forward_1d.exo` and `adjoint_transport_1d.exo` → the per-case CSVs in one data directory, with mesh and case id checks; resumable ([§8.1](#81-workflow)) |
 | `potential_to_source.py` | SCEPTRE's adjoint-source potential $\phi$ → angular source $Q^\dagger=\mu\,d\phi/dx$, in place (run once before `void_sensitivity.py`) |
 | `exodus_to_csv.py` | SCEPTRE Exodus `psi_g_0_a_0_n` element variables → the per-element CSVs below (forward, adjoint flux, optionally adjoint source); single-file, `--list` and `--batch` modes |
 | `extract_qoi.py` | Raw angular flux → electron current → $q_\text{net}$ for each `case_*_forward_1d.csv`; writes `output/qoi_scalar.txt` |
@@ -466,9 +466,9 @@ python3 examples/sceptre_sgemp_charge/collect_exodus_results.py --cases-root CAS
 
 | Exodus file | CSV |
 |---|---|
-| `forward_1d.exo` | `case_NNNN_forward_1d.csv` |
-| `adjoint_transport_1d.exo` | `case_NNNN_adjoint_flux_1d.csv` (not needed for fd cases) |
-| `response_1d.exo` | `case_NNNN_adjoint_1d.csv`, converted to $Q^\dagger$ if it holds the potential |
+| `forward_1d.exo`, `psi_` | `case_NNNN_forward_1d.csv` |
+| `adjoint_transport_1d.exo`, `psi_` | `case_NNNN_adjoint_flux_1d.csv` (not needed for fd cases) |
+| `adjoint_transport_1d.exo`, `source_` | `case_NNNN_adjoint_1d.csv`, converted to $Q^\dagger$ if it holds the potential |
 
 For runs that already exist, add `--make-case-key`. It writes `case_key.txt` and
 `case_manifest.csv` from the layer widths in each forward file. A case that leaves the
@@ -477,9 +477,10 @@ common value in one thickness goes in that thickness's study, and in more than o
 hold out evenly spaced interior points. These runs have no perturbed pairs, so
 `check_gradients_fd.py` cannot check them.
 
-That `response_1d.exo` holds the adjoint source is an assumption until `--inspect` and the
-boundary identity (status 0) confirm it on real files. To read the source from another file,
-use `--response-name` and `--response-prefix`. A case's CSVs are written only after it
+The source comes from the adjoint file because the adjoint flux was solved with it.
+`--inspect` compares it with `response_1d.exo`, which is not otherwise read, and the boundary
+identity (status 0) is the check on real files. To read the source from another file, use
+`--response-name` and `--response-prefix`. A case's CSVs are written only after it
 passes the checks, and each layer's width is compared with `case_key.txt`, which catches a
 wrong case id. The script refuses an output directory inside the repository. Results for
 every case are in `collection_report.csv`, and the exit status is 0 only if all are clean.

@@ -3,13 +3,15 @@ collect_exodus_results.py: gather one Exodus run per case directory into the fla
 per-case CSVs that void_sensitivity.py reads.
 
 Input, for every case directory CASES_ROOT/case_<id>/1d/:
-    forward_1d.exo            forward angular flux  -> case_NNNN_forward_1d.csv
-    adjoint_transport_1d.exo  adjoint angular flux  -> case_NNNN_adjoint_flux_1d.csv
-    response_1d.exo           adjoint source        -> case_NNNN_adjoint_1d.csv
+    forward_1d.exo            psi_     forward flux    -> case_NNNN_forward_1d.csv
+    adjoint_transport_1d.exo  psi_     adjoint flux    -> case_NNNN_adjoint_flux_1d.csv
+    adjoint_transport_1d.exo  source_  adjoint source  -> case_NNNN_adjoint_1d.csv
 
-If the response file holds SCEPTRE's scalar potential (the same for every angle), it is
-converted to Q+ = mu dphi/dx and kept as case_NNNN_adjoint_potential_1d.csv. Cases with
-role fd in case_manifest.csv do not need the adjoint flux.
+The source comes from the adjoint file because it is what the adjoint flux was solved
+with. --inspect compares it with response_1d.exo, which is not otherwise read.
+If the source is SCEPTRE's scalar potential (the same for every angle), it is converted
+to Q+ = mu dphi/dx and kept as case_NNNN_adjoint_potential_1d.csv. Cases with role fd in
+case_manifest.csv do not need the adjoint flux, but do need the source file.
 
 Run from the repository root:
     # 1. Check what the files hold before converting anything.
@@ -59,6 +61,7 @@ DEFAULT_OUT_DIR = REPO_ROOT.parent / "data" / "50_case_multistudy"
 CASES_SUBDIR = Path("gradient_enchanced_gpr") / "cases"
 DESIGN_FILES = ("case_key.txt", "case_manifest.csv", "mesh_settings.csv")
 REPORT_NAME = "collection_report.csv"
+OTHER_RESPONSE_FILE = "response_1d.exo"   # compared by --inspect, not converted
 REPORT_COLUMNS = ("case_id", "role", "status", "n_void", "n_dielectric", "n_shield", "n_core",
                   "thickness_scale", "source_was_potential", "message")
 
@@ -101,15 +104,15 @@ def resolve_cases_root(given):
                      + "\n  ".join(str(p) for p in tried) + "\nPass --cases-root.")
 
 
-def source_prefix(exo_path, requested=None):
-    """The response file's variable prefix: as requested, or its only 5-index family."""
+def source_prefix(exo_path, requested=None, flux_prefix="psi"):
+    """The source's variable prefix: as requested, or the only 5-index family besides the flux."""
     if requested:
         return requested
     with ExodusFile(exo_path) as exo:
         names = exo.names("name_elem_var")
-    families = sorted({m.group(1) for m in map(FIVE_INDEX.match, names) if m})
+    families = sorted({m.group(1) for m in map(FIVE_INDEX.match, names) if m} - {flux_prefix})
     if len(families) != 1:
-        raise ValueError(f"{Path(exo_path).name} has element variable families {families}; expected "
+        raise ValueError(f"{Path(exo_path).name} has source variable families {families}; expected "
                          "exactly one with 5 indices. Run --inspect, then pass --response-prefix.")
     return families[0]
 
@@ -183,7 +186,7 @@ def collect_case(cid, case_dir, out_dir, opts, key_row, mesh_row, role):
             fields = {"forward": fwd}
             if "adjoint" in sources:
                 fields["adjoint"] = read_field(sources["adjoint"], opts["flux_prefix"], opts["step"])
-            prefix = source_prefix(sources["response"], opts["response_prefix"])
+            prefix = source_prefix(sources["response"], opts["response_prefix"], opts["flux_prefix"])
             fields["response"] = read_field(sources["response"], prefix, opts["step"], missing_as_zero=True)
 
             for name, field in fields.items():
@@ -362,6 +365,45 @@ def prepare_design(out_dir, design_dir, force):
         shutil.copy2(src, dst)
 
 
+def compare_files(run_dir, opts):
+    """Print how the fields in the run's files relate, to show which file holds what."""
+    flux, fields = opts["flux_prefix"], {}
+    for name in (opts["forward_name"], opts["adjoint_name"], opts["response_name"], OTHER_RESPONSE_FILE):
+        path = run_dir / name
+        if not path.exists() or name in {k[0] for k in fields}:
+            continue
+        try:
+            fields[(name, flux)] = read_field(path, flux, opts["step"], missing_as_zero=True)
+        except Exception as err:
+            print(f"  {name}: no {flux} field read ({err})")
+        if name != opts["forward_name"]:
+            try:
+                prefix = source_prefix(path, opts["response_prefix"], flux)
+                fields[(name, prefix)] = read_field(path, prefix, opts["step"], missing_as_zero=True)
+            except Exception as err:
+                print(f"  {name}: no source field read ({err})")
+
+    print("\nField comparison, max |a - b| / max |a| (0 means the same field):")
+    labels = list(fields)
+    for i, a in enumerate(labels):
+        for b in labels[i + 1:]:
+            if (a[1] == flux) != (b[1] == flux):
+                continue
+            fa, fb = fields[a], fields[b]
+            if not _same_structure(fa, fb):
+                print(f"  {a[0]}:{a[1]}  vs  {b[0]}:{b[1]}: different mesh or shape")
+                continue
+            scale = max(np.abs(fa["left"]).max(), np.abs(fa["right"]).max(), 1e-300)
+            diff = max(np.abs(fa["left"] - fb["left"]).max(), np.abs(fa["right"] - fb["right"]).max())
+            print(f"  {a[0]}:{a[1]}  vs  {b[0]}:{b[1]}: {diff / scale:.3e}")
+    for (name, prefix), f in fields.items():
+        if prefix != flux:
+            scale = max(np.abs(f["left"]).max(), 1e-300)
+            same = bool(np.ptp(f["left"], axis=2).max() <= 1e-12 * scale)
+            print(f"  {name}:{prefix} is " + ("the same for every angle: a potential, converted to Q+"
+                                              if same else "angle dependent: already an angular source"))
+
+
 def inspect(case_dirs, key, opts):
     print(f"\n{len(case_dirs)} case directories, {len(key)} cases in case_key.txt")
     no_dir, no_key = sorted(set(key) - set(case_dirs)), sorted(set(case_dirs) - set(key))
@@ -382,10 +424,11 @@ def inspect(case_dirs, key, opts):
     response = run_dir / opts["response_name"]
     if response.exists():
         try:
-            print(f"\nAdjoint source: family '{source_prefix(response, opts['response_prefix'])}' "
-                  f"in {response.name}")
+            print(f"\nAdjoint source: family "
+                  f"'{source_prefix(response, opts['response_prefix'], opts['flux_prefix'])}' in {response.name}")
         except ValueError as err:
             print(f"\nAdjoint source: {err}")
+    compare_files(run_dir, opts)
 
 
 def main(argv=None):
@@ -402,9 +445,9 @@ def main(argv=None):
     ap.add_argument("--subdir", default="1d", help="run directory inside each case (default: %(default)s)")
     ap.add_argument("--forward-name", default="forward_1d.exo")
     ap.add_argument("--adjoint-name", default="adjoint_transport_1d.exo")
-    ap.add_argument("--response-name", default="response_1d.exo")
+    ap.add_argument("--response-name", default="adjoint_transport_1d.exo", help="file holding the adjoint source")
     ap.add_argument("--flux-prefix", default="psi", help="angular flux variable prefix (default: %(default)s)")
-    ap.add_argument("--response-prefix", help="adjoint source variable prefix (default: the file's only family)")
+    ap.add_argument("--response-prefix", help="adjoint source variable prefix (default: the file's only family besides the flux)")
     ap.add_argument("--angle-order", default="descending", choices=["ascending", "descending"],
                     help="angle labelling, for potential -> Q+ (SCEPTRE: %(default)s)")
     ap.add_argument("--step", type=int, default=-1, help="time step index (default: last)")
