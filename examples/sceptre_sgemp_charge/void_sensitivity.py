@@ -452,7 +452,7 @@ def _source_log_slopes_multi(T: np.ndarray, levels: list) -> tuple:
 def write_geometry_table(path: Path, rows: list) -> None:
     """Write the independent-thickness table read by check_gradients_fd.py and compare_ge_vs_gp.py."""
     columns = ["case_id", *GEOMETRY_PARAMS, "q", "dq_dtv", "dq_dtd", "dq_dts", "form", "status",
-               "dump_per_key_length", "max_layer_spread"]
+               "dump_per_key_length", "max_layer_spread", "identity_error"]
     with open(path, "w", newline="") as f:
         writer = csv.writer(f)
         writer.writerow(columns)
@@ -869,10 +869,12 @@ def main(data_dir: Path = DATA_DIR, out_dir: Path = OUT_DIR, adjoint_angles_reve
         status = STATUS_UNCHECKED
         use_form = "adjoint"
         dq_geom, layer_spread = {name: np.nan for name in GEOMETRY_PARAMS}, np.nan
+        identity_error = np.nan
         if adj_raw is None:
             print(f"  [no adjoint solution: {a_path.name}]")
         else:
             sc = scores[cid][conv_use]
+            identity_error = sc["err"]
             fwd, src, adj = relabel(fwd_raw, src_raw, adj_raw, *conv_use)
             q_b = sc["q_b"]
             print(f"  adjoint vacuum-face leak    = {sc['leak']:.2e}")
@@ -969,7 +971,7 @@ def main(data_dir: Path = DATA_DIR, out_dir: Path = OUT_DIR, adjoint_angles_reve
         if independent:
             geometry_rows.append(
                 (cid, *[case_key[cid][col] for _, col in GEOMETRY_PARAMS.values()], q,
-                 *dq_geom.values(), use_form, status, s, layer_spread))
+                 *dq_geom.values(), use_form, status, s, layer_spread, identity_error))
 
     if len(src_levels) > 1:
         changed = []

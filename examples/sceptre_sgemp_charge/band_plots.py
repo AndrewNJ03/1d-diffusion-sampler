@@ -71,7 +71,9 @@ def predict_ge(ge_gp, X: np.ndarray, y_mu: float = 0.0, y_sd: float = 1.0) -> di
 def ge_hyperparameters(ge_gp) -> dict:
     """Fitted values in the standardized space, and the names of any at a bound."""
     p = ge_gp.p_act
-    names = ["sigma_f"] + [f"ell_{i}" for i in range(p)] + ["noise_value", "noise_gradient"]
+    gradient_noise = ([f"noise_gradient_{i}" for i in range(p)]
+                      if getattr(ge_gp, "per_dim_gradient_noise", False) else ["noise_gradient"])
+    names = ["sigma_f"] + [f"ell_{i}" for i in range(p)] + ["noise_value"] + gradient_noise
     theta = np.asarray(ge_gp.theta_)
     bounds = np.array(ge_gp.theta_bounds())
     return dict(values=dict(zip(names, np.exp(theta).tolist())),

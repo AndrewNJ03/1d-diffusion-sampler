@@ -12,6 +12,8 @@ $q_\text{net}$ on the coaxial Core/Void/Teflon/Shield geometry that
 
 | File | Role |
 |---|---|
+| `diagnose_comparison.py` | What limits GE-GPR in a comparison: gradient scale, noise in q, outlier cases, fitted noise and failed cases ([§8.5](#85-when-ge-gpr-stops-improving)) |
+| `make_fd_cases.py` | Adds perturbed cases to an existing design, for `check_gradients_fd.py` |
 | `collect_exodus_results.py` | Case directories of `forward_1d.exo` and `adjoint_transport_1d.exo` → the per-case CSVs in one data directory, with mesh and case id checks; resumable ([§8.1](#81-workflow)) |
 | `potential_to_source.py` | SCEPTRE's adjoint-source potential $\phi$ → angular source $Q^\dagger=\mu\,d\phi/dx$, in place (run once before `void_sensitivity.py`) |
 | `exodus_to_csv.py` | SCEPTRE Exodus `psi_g_0_a_0_n` element variables → the per-element CSVs below (forward, adjoint flux, optionally adjoint source); single-file, `--list` and `--batch` modes |
@@ -602,3 +604,50 @@ band width as a share of the y-range and any hyperparameters at a bound, and
 `ge_gpr_scalar.py` saves σ to `ge_gpr_scalar_prediction.npz`. Noise at its lower bound is
 expected for a deterministic solve; other hyperparameters at a bound mean the data do not
 determine them, as with the GP's length scale in the 2-case pilot.
+
+### 8.5 When GE-GPR stops improving
+
+An accurate gradient model on a smooth response should keep improving as cases are added.
+If GE-GPR flattens, find out why before changing the model:
+
+```bash
+python3 compare_ge_vs_gp.py --table RESULTS/qoi_geometry_adjoint.csv \
+    --manifest DATA_DIR/case_manifest.csv --out-dir RESULTS/comparison --splits 20 --n-jobs 8
+python3 diagnose_comparison.py --results RESULTS --data-dir DATA_DIR
+```
+
+`--splits K` redraws train and test K times from the usable cases, so a result does not rest
+on one test set. Without it, all seeds at M equal to the pool fit the same cases. When
+`--sizes-*` are not given, sizes come from the training pool, so that many M also appear as
+2M for the equal-solves comparison.
+
+The diagnosis fits a standard GP to q alone, so that reference has not seen the gradients:
+
+| Finding | Meaning | Next |
+|---|---|---|
+| Gradient mismatch | Adjoint gradient and the GP's derivative differ in scale or shape | Run perturbed cases, then correct the gradient |
+| Possible noise floor | The GP's fitted noise in q is close to the final errors | Refinement test. Differences between models at large M are not meaningful until q is cleaner |
+| Outlier | One case disagrees with the others | Inspect that case's run and mesh |
+| Gradient noise differs by thickness | GE-GPR trusts some gradients less | Compare `--ge-noise per-dim` with `shared` |
+
+Tested by injecting each fault into a synthetic 50-case study. Clean data raised no flags.
+A 10% scale error in any one gradient gave a slope of 1.10, noise of 1.5e-3 was estimated as
+1.50e-3, and a case with q off by 1% was named. These show the tools can detect the faults,
+not which one applies to real data. The GP's derivatives are less trustworthy when q is
+noisy, and this check does not replace `check_gradients_fd.py`.
+
+`--ge-noise per-dim` gives GE-GPR one gradient noise term per thickness. In the same
+synthetic study, at M = 35:
+
+| Gradients | Shared noise | Per thickness |
+|---|---|---|
+| Exact | 6.8e-5 | 6.8e-5 |
+| Shield off by 10% | 3.5e-3 | 8.5e-5 |
+| Dielectric shuffled | 1.1e-3 | 1.2e-4 |
+
+Report it as a variant next to `shared`. It reduces the damage from a poor gradient but does
+not make the gradient correct.
+
+`make_fd_cases.py --data-dir DATA_DIR --table RESULTS/qoi_geometry_adjoint.csv` appends
+perturbed cases to an existing design and lists them in `fd_cases.csv`. Collect them without
+`--make-case-key`, rerun `void_sensitivity.py`, then run `check_gradients_fd.py`.

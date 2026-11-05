@@ -21,6 +21,10 @@ Outputs in --out-dir:
   run_info.json            settings, data counts and the gradient-check verdict
   <study>_*.png            learning curves, calibration, parity and band panels
 
+--splits K redraws the train and test cases K times within each study's usable cases,
+keeping the test size, so the result does not rest on one test set. Without it, the
+manifest's split is used and --seeds only changes the training order.
+
 Solve counts: a GE-GPR training case costs 2 solves (forward + adjoint) and a GP case
 costs 1, so the learning curves are also plotted against solves. The synthetic mode
 runs the whole pipeline on an analytic response, for testing without transport data:
@@ -59,8 +63,7 @@ GE, GP = "ge_gpr", "standard_gp"
 SOLVES_PER_CASE = {GE: 2, GP: 1}
 MODEL_STYLE = {GE: ("GE-GPR", GE_COLOR, GE_STYLE, "o"), GP: ("Standard GP", GP_COLOR, GP_STYLE, "s")}
 NOMINAL_COVERAGE = 0.9545   # Gaussian probability inside +/-2 sigma
-# Chosen so that many M also appear as 2M, for the same-solves comparison.
-DEFAULT_SIZES = dict(single=[3, 5, 6, 10, 15, 20, 30], all=[10, 20, 40, 50, 75, 100, 150])
+MIN_AUTO_SIZE = 5
 JITTER = 1e-6       # GEGaussianProcess's default, which its augmented matrix needs
 
 
@@ -68,7 +71,24 @@ def relative_l2_error(y_pred: np.ndarray, y_true: np.ndarray) -> float:
     return float(np.linalg.norm(y_pred - y_true) / np.linalg.norm(y_true))
 
 
-def fit_pair(X, y, G, seed: int, n_restarts: int):
+def pool_sizes(pool: int) -> list:
+    """Training sizes for a pool of cases, chosen so that many M also appear as 2M."""
+    base = {pool // 4, pool // 3, pool // 2}
+    if pool // 8 >= MIN_AUTO_SIZE:
+        base.add(pool // 8)
+    return sorted({m for b in base for m in (b, 2 * b) if 2 <= m <= pool} | {pool})
+
+
+def wilson_interval(p: float, n: int, z: float = 1.96) -> tuple:
+    """Approximate 95% binomial interval for a proportion from n cases."""
+    if n <= 0 or not np.isfinite(p):
+        return np.nan, np.nan
+    centre = (p + z ** 2 / (2 * n)) / (1 + z ** 2 / n)
+    half = z * np.sqrt(p * (1 - p) / n + z ** 2 / (4 * n ** 2)) / (1 + z ** 2 / n)
+    return float(max(0.0, centre - half)), float(min(1.0, centre + half))
+
+
+def fit_pair(X, y, G, seed: int, n_restarts: int, ge_noise: str = "shared"):
     """Fit both models on one training subset, all scaling from that subset."""
     x_scaler = StandardScaler().fit(X)
     X_n = x_scaler.transform(X)
@@ -78,7 +98,7 @@ def fit_pair(X, y, G, seed: int, n_restarts: int):
 
     t0 = time.perf_counter()
     ge = GEGaussianProcess(active_dims=np.arange(X.shape[1]), n_restarts=n_restarts,
-                           jitter=JITTER).fit(X_n, z, G_n)
+                           jitter=JITTER, per_dim_gradient_noise=ge_noise == "per-dim").fit(X_n, z, G_n)
     t1 = time.perf_counter()
     gp = GaussianProcessRegressor(kernel=matched_gp_kernel(X.shape[1]), n_restarts_optimizer=n_restarts,
                                   normalize_y=False, alpha=JITTER, random_state=seed)
@@ -96,8 +116,12 @@ def metrics(pred: dict, y_test: np.ndarray) -> dict:
     sd = np.maximum(pred["sd_total"], 1e-300)
     span = float(np.ptp(y_test)) or 1.0
     nlpd = 0.5 * (err / sd) ** 2 + np.log(sd / span) + 0.5 * np.log(2 * np.pi)
+    rmse = float(np.sqrt(np.mean(err ** 2)))
+    y_std = float(np.std(y_test))
     return dict(eps_q=relative_l2_error(pred["mean"], y_test),
-                rmse=float(np.sqrt(np.mean(err ** 2))),
+                eps_q_std=rmse / y_std if y_std > 0 else np.nan,
+                n_test=len(y_test), n_inside=int(np.sum(np.abs(err) <= 2 * pred["sd_total"])),
+                rmse=rmse,
                 max_abs_error=float(np.max(np.abs(err))),
                 nlpd=float(np.mean(nlpd)),
                 coverage_2sigma=float(np.mean(np.abs(err) <= 2 * pred["sd_total"])),
@@ -105,12 +129,12 @@ def metrics(pred: dict, y_test: np.ndarray) -> dict:
                 mean_band_width_rel=float(np.mean(4 * pred["sd_total"]) / span))
 
 
-def run_one(study, seed, m, X, y, G, train_idx, X_test, y_test, n_restarts):
+def run_one(study, seed, m, X, y, G, train_idx, X_test, y_test, n_restarts, ge_noise="shared"):
     """One seed and size. Each model's row records its fit; a failed fit gives NaN metrics."""
     idx = train_idx[:m]
     base = dict(study=study, seed=seed, M=m)
     try:
-        fit = fit_pair(X[idx], y[idx], G[idx], seed, n_restarts)
+        fit = fit_pair(X[idx], y[idx], G[idx], seed, n_restarts, ge_noise)
     except np.linalg.LinAlgError as exc:
         return [dict(base, model=model, solves=m * SOLVES_PER_CASE[model], fit_status=f"failed: {exc}")
                 for model in (GE, GP)], {}
@@ -157,7 +181,18 @@ def load_study_data(table_path, manifest_path, allow_failed=False) -> dict:
     return out
 
 
-def run_comparison(data: dict, sizes_single, sizes_all, seeds, n_restarts, n_jobs=1) -> tuple:
+def split_cases(d: dict, seed: int, redraw: bool) -> tuple:
+    """(training order, test indices) of one seed. redraw draws a new split of the usable cases."""
+    rng = np.random.default_rng(seed)
+    if not redraw:
+        return rng.permutation(d["train"]), d["test"]
+    shuffled = rng.permutation(np.concatenate([d["train"], d["test"]]))
+    n_test = len(d["test"])
+    return shuffled[n_test:], np.sort(shuffled[:n_test])
+
+
+def run_comparison(data: dict, sizes_single, sizes_all, seeds, n_restarts, n_jobs=1,
+                   redraw_splits=False, ge_noise="shared") -> tuple:
     tasks = []
     for study, d in data.items():
         if len(d["test"]) == 0:
@@ -165,22 +200,29 @@ def run_comparison(data: dict, sizes_single, sizes_all, seeds, n_restarts, n_job
             continue
         sizes = sizes_all if study == "all" else sizes_single
         pool = len(d["train"])
-        use = [m for m in sizes if 2 <= m <= pool]
+        use = [m for m in (sizes if sizes is not None else pool_sizes(pool)) if 2 <= m <= pool]
         if pool not in use and pool >= 2:
             use.append(pool)
         if not use:
             print(f"Study {study}: only {pool} training case(s), skipped")
             continue
         d["sizes"] = use
+        d["split_test"] = {}
+        if not redraw_splits and len(seeds) > 1:
+            print(f"Study {study}: at M = {pool}, every seed fits the same {pool} cases and all use the "
+                  f"same {len(d['test'])} test cases. Use --splits to vary them.")
         for seed in seeds:
-            order = np.random.default_rng(seed).permutation(d["train"])
+            order, test = split_cases(d, seed, redraw_splits)
+            d["split_test"][seed] = test
             for m in use:
                 tasks.append(delayed(run_one)(study, seed, m, d["X"], d["y"], d["G"], order,
-                                              d["X"][d["test"]], d["y"][d["test"]], n_restarts))
+                                              d["X"][test], d["y"][test], n_restarts, ge_noise))
     print(f"Fitting {len(tasks)} model pairs on {n_jobs} process(es)")
     results = Parallel(n_jobs=n_jobs)(tasks)
     rows = [r for res in results for r in res[0]]
     preds = {k: v for res in results for k, v in res[1].items()}
+    for r in rows:      # how many different test cases a study's coverage rests on
+        r["n_unique_test"] = len(set().union(*map(set, data[r["study"]]["split_test"].values())))
     return rows, preds
 
 
@@ -195,15 +237,29 @@ def summarize(rows: list) -> list:
             gp = {r["seed"]: r for r in at if r["model"] == GP}
             paired = [1.0 - ge[s]["eps_q"] / gp[s]["eps_q"] for s in ge if s in gp and gp[s]["eps_q"] > 0]
             # GP at twice the cases costs the same number of solves as GE-GPR at M.
-            same_cost = [r["eps_q"] for r in ok if r["study"] == study and r["model"] == GP and r["M"] == 2 * m]
+            same_cost = {r["seed"]: r["eps_q"] for r in ok if r["study"] == study and r["model"] == GP
+                         and r["M"] == 2 * m}
+            paired_cost = [1.0 - ge[s]["eps_q"] / same_cost[s] for s in ge if s in same_cost and same_cost[s] > 0]
             row = dict(study=study, M=m, n_seeds=len(ge),
                        median_improvement_same_M=float(np.median(paired)) if paired else np.nan,
-                       gp_eps_q_at_same_solves=float(np.median(same_cost)) if same_cost else np.nan)
+                       ge_win_rate_same_M=float(np.mean(np.array(paired) > 0)) if paired else np.nan,
+                       gp_eps_q_at_same_solves=float(np.median(list(same_cost.values()))) if same_cost else np.nan,
+                       median_improvement_same_solves=float(np.median(paired_cost)) if paired_cost else np.nan,
+                       ge_win_rate_same_solves=float(np.mean(np.array(paired_cost) > 0)) if paired_cost else np.nan)
             for model, recs in ((GE, ge), (GP, gp)):
                 eps = [r["eps_q"] for r in recs.values()]
                 row[f"{model}_eps_q_median"] = float(np.median(eps)) if eps else np.nan
                 row[f"{model}_eps_q_q1"] = float(np.percentile(eps, 25)) if eps else np.nan
                 row[f"{model}_eps_q_q3"] = float(np.percentile(eps, 75)) if eps else np.nan
+                row[f"{model}_eps_q_std_median"] = float(np.median([r["eps_q_std"] for r in recs.values()])) if recs else np.nan
+                inside = sum(r["n_inside"] for r in recs.values())
+                total = sum(r["n_test"] for r in recs.values())
+                pooled = inside / total if total else np.nan
+                # The interval uses the different cases tested: repeats of a case are not independent.
+                n_unique = max((r["n_unique_test"] for r in recs.values()), default=0)
+                row[f"{model}_coverage_pooled"] = pooled
+                row[f"{model}_coverage_pooled_low"], row[f"{model}_coverage_pooled_high"] = wilson_interval(pooled, n_unique)
+                row[f"{model}_coverage_n_cases"] = n_unique
                 for key in ("coverage_2sigma", "nlpd", "mean_band_width_rel"):
                     vals = [r[key] for r in recs.values()]
                     row[f"{model}_{key}_median"] = float(np.median(vals)) if vals else np.nan
@@ -298,11 +354,11 @@ def plot_parity(preds, y_test, study, seed, m, out_dir):
     plt.close(fig)
 
 
-def plot_slices(d, study, seed, m, n_restarts, out_dir):
+def plot_slices(d, study, seed, m, n_restarts, out_dir, ge_noise="shared"):
     """Band panels along each thickness at the largest M; others held at the training median."""
     order = np.random.default_rng(seed).permutation(d["train"])[:m]
     X, y, G = d["X"][order], d["y"][order], d["G"][order]
-    fit = fit_pair(X, y, G, seed, n_restarts)
+    fit = fit_pair(X, y, G, seed, n_restarts, ge_noise)
     X_test, y_test = d["X"][d["test"]], d["y"][d["test"]]
     for j, name in enumerate(d["names"]):
         grid = np.linspace(min(X[:, j].min(), X_test[:, j].min()), max(X[:, j].max(), X_test[:, j].max()), 300)
@@ -365,6 +421,35 @@ def write_synthetic_table(out_dir, gradient_error="none", seed=1, **design_kw) -
     return table_path, manifest_path
 
 
+def _value(v, fmt):
+    return format(v, fmt) if np.isfinite(v) else "-"
+
+
+def print_summary(summary: list, n_seeds: int, redrawn: bool):
+    what = f"{n_seeds} train/test splits" if redrawn else f"{n_seeds} training orders on one test set"
+    print(f"\nMedians over {what}. Same-M compares equal cases; same-solves compares GE-GPR at M with "
+          "GP at 2M, the same cost.")
+    print(f"{'study':11s} {'M':>4s} {'GE eps_q':>10s} {'quartiles':>19s} {'GP eps_q':>10s} {'quartiles':>19s} "
+          f"{'same M':>7s} {'win':>5s} {'same solves':>12s} {'win':>5s}")
+    for s in summary:
+        print(f"{s['study']:11s} {s['M']:4d} {s[GE + '_eps_q_median']:10.3e} "
+              f"{s[GE + '_eps_q_q1']:9.2e} {s[GE + '_eps_q_q3']:9.2e} {s[GP + '_eps_q_median']:10.3e} "
+              f"{s[GP + '_eps_q_q1']:9.2e} {s[GP + '_eps_q_q3']:9.2e} "
+              f"{_value(s['median_improvement_same_M'], '7.1%'):>7s} {_value(s['ge_win_rate_same_M'], '5.0%'):>5s} "
+              f"{_value(s['median_improvement_same_solves'], '12.1%'):>12s} "
+              f"{_value(s['ge_win_rate_same_solves'], '5.0%'):>5s}")
+    print("win: share of paired fits where GE-GPR has the lower error. '-': GP has too few cases.\n")
+    print(f"{'study':11s} {'M':>4s} {'GE err/std':>10s} {'GP err/std':>10s} {'GE NLPD':>8s} {'GP NLPD':>8s} "
+          f"{'GE coverage':>22s} {'GP coverage':>22s}")
+    for s in summary:
+        cover = {m: f"{s[m + '_coverage_pooled']:.2f} [{s[m + '_coverage_pooled_low']:.2f}, "
+                    f"{s[m + '_coverage_pooled_high']:.2f}]" for m in (GE, GP)}
+        print(f"{s['study']:11s} {s['M']:4d} {s[GE + '_eps_q_std_median']:10.3e} {s[GP + '_eps_q_std_median']:10.3e} "
+              f"{s[GE + '_nlpd_median']:8.2f} {s[GP + '_nlpd_median']:8.2f} {cover[GE]:>22s} {cover[GP]:>22s}")
+    print(f"err/std: RMSE over the test q standard deviation. Coverage: share inside +/-2 sigma (nominal "
+          f"{NOMINAL_COVERAGE:.2f}), with an approximate 95% interval from the different test cases.\n")
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description="GE-GPR vs standard GP on thickness data")
     ap.add_argument("--table", help="qoi_geometry_adjoint.csv")
@@ -372,9 +457,12 @@ def main(argv=None):
     ap.add_argument("--out-dir", required=True)
     ap.add_argument("--gradient-check", help="gradient_check.json from check_gradients_fd.py")
     ap.add_argument("--allow-failed", action="store_true", help="keep cases with a failed boundary identity")
-    ap.add_argument("--sizes-single", nargs="+", type=int, default=DEFAULT_SIZES["single"])
-    ap.add_argument("--sizes-all", nargs="+", type=int, default=DEFAULT_SIZES["all"])
+    ap.add_argument("--sizes-single", nargs="+", type=int, help="default: chosen from the training pool")
+    ap.add_argument("--sizes-all", nargs="+", type=int, help="default: chosen from the training pool")
     ap.add_argument("--seeds", type=int, default=5, help="number of random training orders")
+    ap.add_argument("--splits", type=int, help="redraw train and test this many times (replaces --seeds)")
+    ap.add_argument("--ge-noise", default="shared", choices=["shared", "per-dim"],
+                    help="one gradient noise term for GE-GPR, or one per thickness")
     ap.add_argument("--restarts", type=int, default=5, help="optimizer restarts, same for both models")
     ap.add_argument("--n-jobs", type=int, default=1)
     ap.add_argument("--synthetic", action="store_true", help="analytic response, no transport data needed")
@@ -403,34 +491,33 @@ def main(argv=None):
               "perturbed runs. Run check_gradients_fd.py before trusting this comparison.")
 
     data = load_study_data(table_path, manifest_path, a.allow_failed)
-    seeds = list(range(1, a.seeds + 1))
-    rows, preds = run_comparison(data, a.sizes_single, a.sizes_all, seeds, a.restarts, a.n_jobs)
+    seeds = list(range(1, (a.splits or a.seeds) + 1))
+    rows, preds = run_comparison(data, a.sizes_single, a.sizes_all, seeds, a.restarts, a.n_jobs,
+                                 redraw_splits=bool(a.splits), ge_noise=a.ge_noise)
     if not rows:
         raise SystemExit("Nothing to compare: no study has both training and held-out cases.")
     summary = summarize(rows)
     write_csv(out_dir / "comparison_results.csv", rows)
     write_csv(out_dir / "comparison_summary.csv", summary)
-    np.savez(out_dir / "predictions.npz", **{
-        f"{study}__seed{seed}__M{m}__{model}__{key}": val
-        for (study, seed, m), pair in preds.items() for model, pred in pair.items()
-        for key, val in pred.items()})
+    arrays = {f"{study}__seed{seed}__M{m}__{model}__{key}": val
+              for (study, seed, m), pair in preds.items() for model, pred in pair.items()
+              for key, val in pred.items()}
+    for study, d in data.items():
+        for seed, test in d.get("split_test", {}).items():
+            arrays[f"{study}__seed{seed}__test_case_ids"] = d["case_ids"][test]
+            arrays[f"{study}__seed{seed}__test_y"] = d["y"][test]
+    np.savez(out_dir / "predictions.npz", **arrays)
     n_failed = sum(r["fit_status"] != "ok" for r in rows) // 2
     if n_failed:
         print(f"WARNING: {n_failed} model pair(s) failed to fit; see fit_status in comparison_results.csv")
     (out_dir / "run_info.json").write_text(json.dumps(dict(
         table=str(table_path), manifest=str(manifest_path), seeds=seeds, restarts=a.restarts,
+        splits_redrawn=bool(a.splits), ge_noise=a.ge_noise,
         synthetic=a.synthetic, synthetic_gradient_error=a.synthetic_gradient_error if a.synthetic else None,
         gradient_check=verdict, failed_fits=n_failed,
         cases={s: dict(train=len(d["train"]), test=len(d["test"])) for s, d in data.items()}), indent=2))
 
-    print(f"\n{'study':11s} {'M':>4s} {'GE eps_q':>10s} {'GP eps_q':>10s} {'improve':>8s} "
-          f"{'GP@solves':>10s} {'GE cover':>9s} {'GP cover':>9s}")
-    for s in summary:
-        print(f"{s['study']:11s} {s['M']:4d} {s[GE + '_eps_q_median']:10.3e} {s[GP + '_eps_q_median']:10.3e} "
-              f"{s['median_improvement_same_M']:8.1%} {s['gp_eps_q_at_same_solves']:10.3e} "
-              f"{s[GE + '_coverage_2sigma_median']:9.2f} {s[GP + '_coverage_2sigma_median']:9.2f}")
-    print("improve: paired median over seeds at the same M. GP@solves: GP at 2M cases, the same "
-          "solve count as GE-GPR at M (nan if 2M is not in the sizes).\n")
+    print_summary(summary, len(seeds), bool(a.splits))
 
     for study, d in data.items():
         if "sizes" not in d:
@@ -439,8 +526,8 @@ def main(argv=None):
         plot_calibration(rows, study, out_dir)
         m_max = d["sizes"][-1]
         if (study, seeds[0], m_max) in preds:
-            plot_parity(preds, d["y"][d["test"]], study, seeds[0], m_max, out_dir)
-            plot_slices(d, study, seeds[0], m_max, a.restarts, out_dir)
+            plot_parity(preds, d["y"][d["split_test"][seeds[0]]], study, seeds[0], m_max, out_dir)
+            plot_slices(d, study, seeds[0], m_max, a.restarts, out_dir, a.ge_noise)
     print(f"\nSaved results and plots to {out_dir}")
     return rows, summary
 

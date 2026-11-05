@@ -81,6 +81,10 @@ class GEGaussianProcess:
         Initial (and lower-bound) noise level on function observations.
     noise_d_init : float
         Initial (and lower-bound) noise level on derivative observations.
+    per_dim_gradient_noise : bool
+        False (default): one σ_nd shared by all derivative directions.
+        True: one σ_nd per direction, so θ ends in log σ_nd_0, …, log σ_nd_{p_act-1}.
+        A poor gradient in one direction can then be discounted on its own.
     """
 
     def __init__(
@@ -90,6 +94,7 @@ class GEGaussianProcess:
         noise_f_init: float = 1e-3,
         noise_d_init: float = 1e-3,
         jitter: float = 1e-6,
+        per_dim_gradient_noise: bool = False,
     ):
         self.active_dims = np.asarray(active_dims, dtype=int)
         self.p_act = int(len(self.active_dims))
@@ -97,6 +102,8 @@ class GEGaussianProcess:
         self.noise_f_init = noise_f_init
         self.noise_d_init = noise_d_init
         self.jitter = jitter
+        self.per_dim_gradient_noise = per_dim_gradient_noise
+        self.n_noise_d = self.p_act if per_dim_gradient_noise else 1
 
         # Populated by fit()
         self.theta_ = None
@@ -115,8 +122,8 @@ class GEGaussianProcess:
         sf2  = np.exp(2.0 * theta[0])
         ells2 = np.exp(2.0 * theta[1:1 + p])
         nf2  = np.exp(2.0 * theta[1 + p])
-        nd2  = np.exp(2.0 * theta[2 + p])
-        return sf2, ells2, nf2, nd2
+        nd2  = np.exp(2.0 * theta[2 + p:2 + p + self.n_noise_d])
+        return sf2, ells2, nf2, nd2 if self.per_dim_gradient_noise else nd2[0]
 
     def _build_aug_K(self, X: np.ndarray, theta: np.ndarray, return_parts: bool = False):
         """
@@ -163,7 +170,8 @@ class GEGaussianProcess:
         K[M:, M:] = Kdd_blk.transpose(0, 2, 1, 3).reshape(M * p, M * p)
         diag = np.einsum('ii->i', K)           # writable view of the diagonal
         diag[:M] += nf2
-        diag[M:] += nd2
+        # A scalar, or one value per direction: y_aug[M + i*p + m] is direction m of case i.
+        diag[M:] += np.tile(nd2, M) if self.per_dim_gradient_noise else nd2
         diag += self.jitter
         if return_parts:
             return K, (Kff, Kfd_blk, Kdd_blk, R, A)
@@ -243,7 +251,10 @@ class GEGaussianProcess:
             + 2.0 * (B.sum(axis=(0, 1, 3)) + B.sum(axis=(0, 1, 2)))
         )
         tr[1 + p] = 2.0 * nf2 * np.trace(Wff)
-        tr[2 + p] = 2.0 * nd2 * np.trace(W[M:, M:])
+        if self.per_dim_gradient_noise:
+            tr[2 + p:] = 2.0 * nd2 * np.diag(W[M:, M:]).reshape(M, p).sum(axis=0)
+        else:
+            tr[2 + p] = 2.0 * nd2 * np.trace(W[M:, M:])
         return nlml, -0.5 * tr
 
     # ------------------------------------------------------------------ #
@@ -254,7 +265,7 @@ class GEGaussianProcess:
         """L-BFGS-B bounds on θ, in the order of _parse_theta."""
         return (
             [(-5.0, 5.0)] * (1 + self.p_act)   # sf, ells
-            + [(-10.0, 0.0), (-10.0, 0.0)]     # nf, nd  (keep noise ≤ 1)
+            + [(-10.0, 0.0)] * (1 + self.n_noise_d)   # nf, nd  (keep noise ≤ 1)
         )
 
     def fit(
@@ -284,12 +295,12 @@ class GEGaussianProcess:
         self.X_train_ = X.copy()
         self.y_aug_   = y_aug
 
-        theta_dim = 3 + p          # log_sf  +  log_ells (p)  +  log_nf  +  log_nd
+        theta_dim = 2 + p + self.n_noise_d   # log_sf + log_ells (p) + log_nf + log_nd (1 or p)
         bounds = self.theta_bounds()
 
         theta0 = np.zeros(theta_dim)
         theta0[1 + p] = np.log(self.noise_f_init)
-        theta0[2 + p] = np.log(self.noise_d_init)
+        theta0[2 + p:] = np.log(self.noise_d_init)
         if theta_init is not None:
             lo, hi = np.array(bounds).T
             theta0 = np.clip(np.asarray(theta_init, dtype=float), lo, hi)
@@ -303,7 +314,7 @@ class GEGaussianProcess:
             else:
                 theta_i = np.concatenate([
                     rng.uniform(-2.0, 2.0, size=1 + p),
-                    rng.uniform(-8.0, -2.0, size=2),
+                    rng.uniform(-8.0, -2.0, size=1 + self.n_noise_d),
                 ])
 
             # Single-threaded BLAS: at n_aug ~ 10²–10³ the OpenBLAS thread
