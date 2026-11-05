@@ -58,7 +58,7 @@ from potential_to_source import convert_case
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_OUT_DIR = REPO_ROOT.parent / "data" / "50_case_multistudy"
-CASES_SUBDIR = Path("gradient_enchanced_gpr") / "cases"
+CASES_SUBDIR = Path("gradient_enhanced_gpr") / "cases"
 DESIGN_FILES = ("case_key.txt", "case_manifest.csv", "mesh_settings.csv")
 REPORT_NAME = "collection_report.csv"
 OTHER_RESPONSE_FILE = "response_1d.exo"   # compared by --inspect, not converted
