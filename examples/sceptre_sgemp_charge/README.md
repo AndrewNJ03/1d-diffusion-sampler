@@ -12,6 +12,7 @@ $q_\text{net}$ on the coaxial Core/Void/Teflon/Shield geometry that
 
 | File | Role |
 |---|---|
+| `collect_exodus_results.py` | Case directories of `forward_1d.exo`, `adjoint_transport_1d.exo` and `response_1d.exo` → the per-case CSVs in one data directory, with mesh and case id checks; resumable ([§8.1](#81-workflow)) |
 | `potential_to_source.py` | SCEPTRE's adjoint-source potential $\phi$ → angular source $Q^\dagger=\mu\,d\phi/dx$, in place (run once before `void_sensitivity.py`) |
 | `exodus_to_csv.py` | SCEPTRE Exodus `psi_g_0_a_0_n` element variables → the per-element CSVs below (forward, adjoint flux, optionally adjoint source); single-file, `--list` and `--batch` modes |
 | `extract_qoi.py` | Raw angular flux → electron current → $q_\text{net}$ for each `case_*_forward_1d.csv`; writes `output/qoi_scalar.txt` |
@@ -430,7 +431,8 @@ python3 make_geometry_cases.py --out-dir DATA_DIR
 # 2. On the server: run every case in DATA_DIR/case_key.txt and dump into DATA_DIR
 #      every case:  case_NNNN_forward_1d.csv and case_NNNN_adjoint_1d.csv (Q+)
 #      train, test: also case_NNNN_adjoint_flux_1d.csv
-#    Roles are in DATA_DIR/case_manifest.csv. Sections 5 and 6 cover the conversions.
+#    Roles are in DATA_DIR/case_manifest.csv. Sections 5 and 6 cover the conversions;
+#    collect_exodus_results.py does them all for runs laid out as case_*/1d/ (below).
 #    exodus_to_csv.py takes Q+ from the adjoint Exodus file, so fd cases need one too,
 #    unless the source can be written without an adjoint solve. Their adjoint flux is
 #    not used.
@@ -451,6 +453,29 @@ python3 compare_ge_vs_gp.py --table RESULTS/qoi_geometry_adjoint.csv \
 The default design is 350 training and test cases plus 120 perturbed cases: 940 solves
 with an adjoint run for every case, or 820 if the perturbed cases can skip the adjoint
 solve. Use the same `--weight-sum` you use for the rest of your data.
+
+**Collecting Exodus runs.** For runs in `CASES_ROOT/case_*/1d/`, run this from the
+repository root, with `case_key.txt` in the output directory or `--design-dir`:
+
+```bash
+python3 examples/sceptre_sgemp_charge/collect_exodus_results.py --cases-root CASES_ROOT \
+    --out-dir DATA_DIR --inspect    # check the variables first; writes nothing
+python3 examples/sceptre_sgemp_charge/collect_exodus_results.py --cases-root CASES_ROOT \
+    --out-dir DATA_DIR --jobs 8     # rerun after fixes; finished cases are skipped
+```
+
+| Exodus file | CSV |
+|---|---|
+| `forward_1d.exo` | `case_NNNN_forward_1d.csv` |
+| `adjoint_transport_1d.exo` | `case_NNNN_adjoint_flux_1d.csv` (not needed for fd cases) |
+| `response_1d.exo` | `case_NNNN_adjoint_1d.csv`, converted to $Q^\dagger$ if it holds the potential |
+
+That `response_1d.exo` holds the adjoint source is an assumption until `--inspect` and the
+boundary identity (status 0) confirm it on real files. To read the source from another file,
+use `--response-name` and `--response-prefix`. A case's CSVs are written only after it
+passes the checks, and each layer's width is compared with `case_key.txt`, which catches a
+wrong case id. The script refuses an output directory inside the repository. Results for
+every case are in `collection_report.csv`, and the exit status is 0 only if all are clean.
 
 **Meshing.** Use `linear` meshing in every region, with the max sizes that
 `make_geometry_cases.py` writes per case to `mesh_settings.csv`. This relies on `linear`
