@@ -470,6 +470,13 @@ python3 examples/sceptre_sgemp_charge/collect_exodus_results.py --cases-root CAS
 | `adjoint_transport_1d.exo` | `case_NNNN_adjoint_flux_1d.csv` (not needed for fd cases) |
 | `response_1d.exo` | `case_NNNN_adjoint_1d.csv`, converted to $Q^\dagger$ if it holds the potential |
 
+For runs that already exist, add `--make-case-key`. It writes `case_key.txt` and
+`case_manifest.csv` from the layer widths in each forward file. A case that leaves the
+common value in one thickness goes in that thickness's study, and in more than one goes in
+`all`. `--test-fraction` (default 0.3) sets the held-out share; single-thickness studies
+hold out evenly spaced interior points. These runs have no perturbed pairs, so
+`check_gradients_fd.py` cannot check them.
+
 That `response_1d.exo` holds the adjoint source is an assumption until `--inspect` and the
 boundary identity (status 0) confirm it on real files. To read the source from another file,
 use `--response-name` and `--response-prefix`. A case's CSVs are written only after it

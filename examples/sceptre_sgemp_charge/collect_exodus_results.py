@@ -21,8 +21,10 @@ Defaults are relative to the repository's parent directory: output goes to
 data/50_case_multistudy, and CASES_ROOT is gradient_enchanced_gpr/cases, looked for in
 the current directory, the repository's parent and that directory's parent.
 
-case_key.txt must be in the output directory, or in --design-dir. The ids come from the
-directory names, so case_7 and case_0007 are both case 7.
+case_key.txt must be in the output directory, or in --design-dir. For runs that already
+exist, --make-case-key writes it from the layer widths in each forward file instead, along
+with a case_manifest.csv (see infer_design). The ids come from the directory names, so
+case_7 and case_0007 are both case 7.
 
 A case's CSVs appear only after all of its files converted and passed these checks:
   failed   a file does not read; meshes, groups or angles differ between files; a field is
@@ -47,9 +49,9 @@ from pathlib import Path
 
 import numpy as np
 
-from exodus_to_csv import ExodusFile, _parse_cases, list_variables, read_field, write_csv
+from exodus_to_csv import ExodusFile, _parse_cases, list_variables, read_elements, read_field, write_csv
 from extract_qoi import load_case_key
-from make_geometry_cases import read_manifest
+from make_geometry_cases import read_manifest, write_design
 from potential_to_source import convert_case
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -213,6 +215,132 @@ def collect_case(cid, case_dir, out_dir, opts, key_row, mesh_row, role):
     return row, log.getvalue()
 
 
+def read_layers(exo_path):
+    """Thickness, element count and element size range of each layer, from the mesh only."""
+    with ExodusFile(exo_path) as exo:
+        el = read_elements(exo)
+    left, right = np.minimum(el["x0"], el["x1"]), np.maximum(el["x0"], el["x1"])
+    blocks = set(np.unique(el["b_id"]).tolist())
+    expected = {b for ids, _ in LAYERS.values() for b in ids}
+    if blocks != expected:
+        raise ValueError(f"block ids {sorted(blocks)}, expected {sorted(expected)}")
+    layers = {}
+    for name, (ids, _) in LAYERS.items():
+        sides = []
+        for b in ids:
+            m = el["b_id"] == b
+            h = right[m] - left[m]
+            sides.append(dict(t=float(right[m].max() - left[m].min()), n=int(m.sum()),
+                              h_min=float(h.min()), h_max=float(h.max())))
+        if abs(sides[0]["t"] - sides[1]["t"]) > THICKNESS_TOL * sides[0]["t"]:
+            raise ValueError(f"{name} differs between mirrored sides: {sides[0]['t']} and {sides[1]['t']}")
+        layers[name] = sides[0]
+    return layers
+
+
+def infer_studies(T):
+    """
+    Study of each case from thicknesses T (n, 3; void, dielectric, shield). A thickness
+    has a nominal value if one value covers at least a quarter of the cases. A case that
+    leaves nominal in one thickness belongs to that thickness's study, in more than one to
+    "all", and in none to the smallest single study (its value is a valid point in each).
+    """
+    names = ("void", "dielectric", "shield")
+    off = np.ones_like(T, dtype=bool)
+    for j in range(3):
+        values, counts = np.unique(np.round(T[:, j], 9), return_counts=True)
+        if counts.max() >= 0.25 * len(T):
+            off[:, j] = np.abs(T[:, j] - values[counts.argmax()]) > 1e-8
+    studies = [names[int(np.argmax(row))] if row.sum() == 1 else "all" if row.sum() > 1 else None
+               for row in off]
+    for i, study in enumerate(studies):
+        if study is None:
+            studies[i] = min(names, key=lambda n: studies.count(n))
+    return studies
+
+
+def split_roles(studies, T, test_fraction, seed):
+    """
+    Train or test per case. Single-thickness studies hold out evenly spaced interior
+    points, so the test cases are interpolation and the range ends stay in training. The
+    all study holds out a seeded random subset.
+    """
+    roles = ["train"] * len(T)
+    rng = np.random.default_rng(seed)
+    for study in sorted(set(studies)):
+        ids = np.array([i for i, s in enumerate(studies) if s == study])
+        n_test = int(round(test_fraction * len(ids)))
+        if len(ids) < 3 or n_test == 0:
+            continue
+        if study == "all":
+            chosen = rng.permutation(ids)[:n_test]
+        else:
+            j = ("void", "dielectric", "shield").index(study)
+            order = ids[np.argsort(T[ids, j])]
+            n_test = min(n_test, len(ids) - 2)
+            chosen = order[np.round(np.linspace(0, len(ids) - 1, n_test + 2)[1:-1]).astype(int)]
+        for i in chosen:
+            roles[int(i)] = "test"
+    return roles
+
+
+def infer_design(case_dirs, opts, test_fraction, seed):
+    """Thicknesses and manifest of the runs on disk. Returns X, manifest, core, unreadable, mesh notes."""
+    cids, rows, per_case, unreadable = [], [], [], {}
+    for cid in sorted(case_dirs):
+        path = case_dirs[cid] / opts["subdir"] / opts["forward_name"]
+        try:
+            layers = read_layers(path)
+        except Exception as err:
+            unreadable[cid] = f"{type(err).__name__}: {err}"
+            continue
+        cids.append(cid)
+        per_case.append(layers)
+        rows.append([float(f"{layers[n]['t']:.12g}") for n in ("void", "dielectric", "shield", "core")])
+    if not rows:
+        raise SystemExit("No forward file could be read: " + "; ".join(f"{c}: {m}" for c, m in unreadable.items()))
+    rows = np.array(rows)
+    core = np.median(rows[:, 3])
+    if np.any(np.abs(rows[:, 3] - core) > THICKNESS_TOL * core):
+        raise SystemExit(f"The core width varies between cases ({rows[:, 3].min()} to {rows[:, 3].max()}); "
+                         "this study needs one fixed core.")
+    X = rows[:, :3]
+    studies = infer_studies(X)
+    roles = split_roles(studies, X, test_fraction, seed)
+    manifest = [dict(case_id=c, study=s, role=r, fd_parent="", fd_param="", fd_sign="", fd_step="")
+                for c, s, r in zip(cids, studies, roles)]
+    notes = {}
+    for name in LAYERS:
+        counts = [p[name]["n"] for p in per_case]
+        h_min = min(p[name]["h_min"] for p in per_case)
+        h_max = max(p[name]["h_max"] for p in per_case)
+        notes[name] = dict(t_min=min(p[name]["t"] for p in per_case), t_max=max(p[name]["t"] for p in per_case),
+                           n_min=min(counts), n_max=max(counts), h_min=h_min, h_max=h_max)
+    return X, manifest, float(core), unreadable, notes
+
+
+def print_design(X, manifest, core, unreadable, notes):
+    print(f"\nDesign read from the forward files: {len(X)} cases, core width {core:.8g}")
+    print(f"  {'study':11s} {'train':>5s} {'test':>5s}")
+    for study in ("void", "dielectric", "shield", "all"):
+        roles = [m["role"] for m in manifest if m["study"] == study]
+        if roles:
+            print(f"  {study:11s} {roles.count('train'):5d} {roles.count('test'):5d}")
+    print(f"\n  {'layer':11s} {'thickness':>23s} {'elements':>11s} {'element size':>23s}")
+    for name, n in notes.items():
+        print(f"  {name:11s} {n['t_min']:11.6g} {n['t_max']:11.6g} {n['n_min']:5d} {n['n_max']:5d} "
+              f"{n['h_min']:11.4g} {n['h_max']:11.4g}")
+    for name in ("void", "dielectric"):
+        if notes[name]["n_min"] != notes[name]["n_max"]:
+            print(f"  NOTE: the {name} element count changes between cases, which can add jitter to q.")
+    if notes["shield"]["h_max"] > notes["shield"]["h_min"] * (1 + 1e-6):
+        print("  NOTE: the shield element size changes, so the Q+ spike element's width changes. "
+              "q gains a mesh term the adjoint gradient does not contain.")
+    for cid, why in unreadable.items():
+        print(f"  WARNING: case {cid} left out, forward file not readable: {why}")
+    print("  No fd cases: the runs have no perturbed pairs, so check_gradients_fd.py has nothing to use.")
+
+
 def read_csv_rows(path, key):
     if not Path(path).exists():
         return {}
@@ -266,6 +394,11 @@ def main(argv=None):
     ap.add_argument("--cases-root", help=f"directory holding case_* (default: find {CASES_SUBDIR})")
     ap.add_argument("--out-dir", default=str(DEFAULT_OUT_DIR), help="where the CSVs go (default: %(default)s)")
     ap.add_argument("--design-dir", help="copy case_key.txt, case_manifest.csv, mesh_settings.csv from here")
+    ap.add_argument("--make-case-key", action="store_true",
+                    help="write case_key.txt and case_manifest.csv from the runs on disk")
+    ap.add_argument("--test-fraction", type=float, default=0.3,
+                    help="share of each study held out as test, with --make-case-key (default: %(default)s)")
+    ap.add_argument("--seed", type=int, default=1, help="for the all study's test split (default: %(default)s)")
     ap.add_argument("--subdir", default="1d", help="run directory inside each case (default: %(default)s)")
     ap.add_argument("--forward-name", default="forward_1d.exo")
     ap.add_argument("--adjoint-name", default="adjoint_transport_1d.exo")
@@ -291,6 +424,18 @@ def main(argv=None):
     opts = dict(subdir=a.subdir, forward_name=a.forward_name, adjoint_name=a.adjoint_name,
                 response_name=a.response_name, flux_prefix=a.flux_prefix,
                 response_prefix=a.response_prefix, angle_order=a.angle_order, step=a.step, force=a.force)
+
+    if a.make_case_key:
+        if a.design_dir:
+            ap.error("--make-case-key and --design-dir are alternatives")
+        X, manifest, core, unreadable, notes = infer_design(case_dirs, opts, a.test_fraction, a.seed)
+        print_design(X, manifest, core, unreadable, notes)
+        if a.inspect:
+            return inspect(case_dirs, {m["case_id"]: None for m in manifest}, opts) or 0
+        out_dir.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=out_dir, prefix=".design_") as tmp:
+            write_design(tmp, X, manifest, core)
+            prepare_design(out_dir, tmp, a.force)
 
     key_dir = Path(a.design_dir) if a.inspect and a.design_dir else out_dir
     if not a.inspect:
@@ -371,14 +516,16 @@ def main(argv=None):
         print("\nFix the cases above and rerun; finished cases are skipped.")
         return 1
     results = out_dir / "results"
+    has_fd = any(m.get("role") == "fd" for m in manifest.values())
     print("\nNext:\n"
           f"  python3 examples/sceptre_sgemp_charge/void_sensitivity.py {out_dir} "
-          f"--parameterization independent --weight-sum 1 --out-dir {results}\n"
-          f"  python3 examples/sceptre_sgemp_charge/check_gradients_fd.py --table {results}/qoi_geometry_adjoint.csv "
-          f"--manifest {out_dir}/case_manifest.csv --out-dir {results}\n"
-          f"  python3 examples/sceptre_sgemp_charge/compare_ge_vs_gp.py --table {results}/qoi_geometry_adjoint.csv "
-          f"--manifest {out_dir}/case_manifest.csv --gradient-check {results}/gradient_check.json "
-          f"--out-dir {results}/comparison --n-jobs 8")
+          f"--parameterization independent --weight-sum 1 --out-dir {results}")
+    if has_fd:
+        print(f"  python3 examples/sceptre_sgemp_charge/check_gradients_fd.py --table {results}/qoi_geometry_adjoint.csv "
+              f"--manifest {out_dir}/case_manifest.csv --out-dir {results}")
+    check = f"--gradient-check {results}/gradient_check.json " if has_fd else ""
+    print(f"  python3 examples/sceptre_sgemp_charge/compare_ge_vs_gp.py --table {results}/qoi_geometry_adjoint.csv "
+          f"--manifest {out_dir}/case_manifest.csv {check}--out-dir {results}/comparison --n-jobs 8")
     return 0
 
 
