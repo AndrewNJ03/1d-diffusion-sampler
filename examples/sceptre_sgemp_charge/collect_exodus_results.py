@@ -32,7 +32,10 @@ A case's CSVs appear only after all of its files converted and passed these chec
   failed   a file does not read; meshes, groups or angles differ between files; a field is
            not finite; layer widths disagree with case_key.txt (wrong case id, usually)
   warning  mirrored layers or element counts differ from mesh_settings.csv; the CSVs are
-           kept, but the mesh is not the designed one
+           kept, but the mesh is not the designed one. Void and dielectric counts may differ
+           by --element-count-tol (default 1), since rounding in the mesher can add an
+           element; those cases stay ok, with a note in the report. Shield and core are
+           exact, because the Q+ spike element's width changes q.
 Every case gets a row in collection_report.csv. Exit status is 0 only if every case in
 case_key.txt is ok.
 """
@@ -68,6 +71,7 @@ REPORT_COLUMNS = ("case_id", "role", "status", "n_void", "n_dielectric", "n_shie
 # Block ids of the left and right copy of each layer, and the case_key.txt column.
 LAYERS = {"void": ((3, 5), "Void_Thickness"), "dielectric": ((2, 6), "Dielectric_Thickness"),
           "shield": ((1, 7), "Shield_Thickness"), "core": ((4, 4), "Core_Thickness")}
+COUNT_TOLERANT_LAYERS = ("void", "dielectric")
 THICKNESS_TOL = 1e-5     # relative; the smallest design FD step is several times 1e-3
 FIVE_INDEX = re.compile(r"^(.*?)_\d+_\d+_\d+_\d+_\d+$")
 
@@ -123,21 +127,35 @@ def _same_structure(a, b):
         and np.allclose(a["x_right"], b["x_right"], rtol=1e-10, atol=1e-12)
 
 
-def check_geometry(field, key_row, mesh_row):
-    """Element counts and thickness scale; raises if the layers disagree with case_key.txt."""
-    counts, widths, warnings = {}, {}, []
+def check_geometry(field, key_row, mesh_row, count_tol=1):
+    """
+    Element counts, thickness scale, warnings and notes; raises if the layers disagree
+    with case_key.txt. A count off by at most count_tol in a COUNT_TOLERANT_LAYERS layer
+    is a note, and any other mesh difference is a warning.
+    """
+    counts, widths, warnings, notes = {}, {}, [], []
+
+    def count_issue(name, off, text):
+        allowed = count_tol if name in COUNT_TOLERANT_LAYERS else 0
+        (notes if off <= allowed else warnings).append(text)
+
     blocks = set(np.unique(field["block"]).tolist())
     expected = {b for ids, _ in LAYERS.values() for b in ids}
     if blocks != expected:
         raise ValueError(f"block ids {sorted(blocks)}, expected {sorted(expected)}")
+    sides = {}
     for name, (ids, _) in LAYERS.items():
         side = []
         for b in ids:
             m = field["block"] == b
             side.append((int(m.sum()), float(field["x_right"][m].max() - field["x_left"][m].min())))
         counts[name], widths[name] = side[0]
-        if side[0][0] != side[1][0] or abs(side[0][1] - side[1][1]) > THICKNESS_TOL * side[0][1]:
-            warnings.append(f"{name} differs between mirrored sides: {side}")
+        if abs(side[0][1] - side[1][1]) > THICKNESS_TOL * side[0][1]:
+            warnings.append(f"{name} width differs between mirrored sides: {side}")
+        if side[0][0] != side[1][0]:
+            count_issue(name, abs(side[0][0] - side[1][0]),
+                        f"{name} element count differs between mirrored sides: {side[0][0]}, {side[1][0]}")
+        sides[name] = (side[0][0], side[1][0])
     ratios = {name: widths[name] / key_row[col] for name, (_, col) in LAYERS.items()}
     scale = float(np.median(list(ratios.values())))
     bad = {n: r for n, r in ratios.items() if abs(r / scale - 1) > THICKNESS_TOL}
@@ -145,11 +163,19 @@ def check_geometry(field, key_row, mesh_row):
         raise ValueError("layer widths disagree with case_key.txt: "
                          + ", ".join(f"{n} {widths[n]:.8g} vs {key_row[LAYERS[n][1]]:.8g}" for n in bad))
     if mesh_row:
-        for name, n in counts.items():
+        for name, pair in sides.items():
             want = int(mesh_row[f"n_{name}"])
-            if n != want:
-                warnings.append(f"{name} has {n} elements, mesh_settings.csv says {want}")
-    return counts, scale, warnings
+            off = max(abs(n - want) for n in pair)
+            if off:
+                count_issue(name, off, f"{name} has {pair[0]}, {pair[1]} elements, mesh_settings.csv says {want}")
+    return counts, scale, warnings, notes
+
+
+def read_mesh_field(exo_path):
+    """Only what check_geometry needs, without reading the fields."""
+    with ExodusFile(exo_path) as exo:
+        el = read_elements(exo)
+    return dict(block=el["b_id"], x_left=np.minimum(el["x0"], el["x1"]), x_right=np.maximum(el["x0"], el["x1"]))
 
 
 def is_current(paths, sources):
@@ -173,7 +199,15 @@ def collect_case(cid, case_dir, out_dir, opts, key_row, mesh_row, role):
 
     out = output_paths(Path(out_dir), cid)
     if not opts["force"] and is_current([out[k] for k in sources], list(sources.values())):
-        row.update(status="current", message="CSVs are newer than the Exodus files")
+        # Nothing to convert, but the mesh checks may have changed since the CSVs were written.
+        try:
+            counts, scale, warnings, notes = check_geometry(read_mesh_field(sources["forward"]), key_row,
+                                                            mesh_row, opts["count_tol"])
+        except Exception as err:
+            row["message"] = f"{type(err).__name__}: {err}"
+            return row, ""
+        row.update(status="warning" if warnings else "ok", thickness_scale=f"{scale:.10g}",
+                   message="; ".join(warnings + notes), **{f"n_{name}": n for name, n in counts.items()})
         return row, ""
 
     log = io.StringIO()
@@ -182,7 +216,7 @@ def collect_case(cid, case_dir, out_dir, opts, key_row, mesh_row, role):
                 tempfile.TemporaryDirectory(dir=out_dir, prefix=f".collect_{cid:04d}_") as tmp:
             tmp_out = output_paths(Path(tmp), cid)
             fwd = read_field(sources["forward"], opts["flux_prefix"], opts["step"])
-            counts, scale, warnings = check_geometry(fwd, key_row, mesh_row)
+            counts, scale, warnings, notes = check_geometry(fwd, key_row, mesh_row, opts["count_tol"])
             fields = {"forward": fwd}
             if "adjoint" in sources:
                 fields["adjoint"] = read_field(sources["adjoint"], opts["flux_prefix"], opts["step"])
@@ -213,7 +247,7 @@ def collect_case(cid, case_dir, out_dir, opts, key_row, mesh_row, role):
         return row, log.getvalue()
 
     row.update(status="warning" if warnings else "ok", thickness_scale=f"{scale:.10g}",
-               source_was_potential=int(was_potential), message="; ".join(warnings),
+               source_was_potential=int(was_potential), message="; ".join(warnings + notes),
                **{f"n_{name}": n for name, n in counts.items()})
     return row, log.getvalue()
 
@@ -322,7 +356,7 @@ def infer_design(case_dirs, opts, test_fraction, seed):
     return X, manifest, float(core), unreadable, notes
 
 
-def print_design(X, manifest, core, unreadable, notes):
+def print_design(X, manifest, core, unreadable, notes, count_tol=1):
     print(f"\nDesign read from the forward files: {len(X)} cases, core width {core:.8g}")
     print(f"  {'study':11s} {'train':>5s} {'test':>5s}")
     for study in ("void", "dielectric", "shield", "all"):
@@ -334,7 +368,7 @@ def print_design(X, manifest, core, unreadable, notes):
         print(f"  {name:11s} {n['t_min']:11.6g} {n['t_max']:11.6g} {n['n_min']:5d} {n['n_max']:5d} "
               f"{n['h_min']:11.4g} {n['h_max']:11.4g}")
     for name in ("void", "dielectric"):
-        if notes[name]["n_min"] != notes[name]["n_max"]:
+        if notes[name]["n_max"] - notes[name]["n_min"] > count_tol:
             print(f"  NOTE: the {name} element count changes between cases, which can add jitter to q.")
     if notes["shield"]["h_max"] > notes["shield"]["h_min"] * (1 + 1e-6):
         print("  NOTE: the shield element size changes, so the Q+ spike element's width changes. "
@@ -452,6 +486,8 @@ def main(argv=None):
                     help="angle labelling, for potential -> Q+ (SCEPTRE: %(default)s)")
     ap.add_argument("--step", type=int, default=-1, help="time step index (default: last)")
     ap.add_argument("--cases", help="case ids, e.g. '0-9' or '0,3,5' (default: all in case_key.txt)")
+    ap.add_argument("--element-count-tol", type=int, default=1,
+                    help="allowed void and dielectric element count difference (default: %(default)s)")
     ap.add_argument("--jobs", type=int, default=1, help="cases converted at once (default: %(default)s)")
     ap.add_argument("--force", action="store_true", help="reconvert cases whose CSVs are already current")
     ap.add_argument("--inspect", action="store_true", help="list the variables of one case and write nothing")
@@ -466,13 +502,14 @@ def main(argv=None):
 
     opts = dict(subdir=a.subdir, forward_name=a.forward_name, adjoint_name=a.adjoint_name,
                 response_name=a.response_name, flux_prefix=a.flux_prefix,
-                response_prefix=a.response_prefix, angle_order=a.angle_order, step=a.step, force=a.force)
+                response_prefix=a.response_prefix, angle_order=a.angle_order, step=a.step, force=a.force,
+                count_tol=a.element_count_tol)
 
     if a.make_case_key:
         if a.design_dir:
             ap.error("--make-case-key and --design-dir are alternatives")
         X, manifest, core, unreadable, notes = infer_design(case_dirs, opts, a.test_fraction, a.seed)
-        print_design(X, manifest, core, unreadable, notes)
+        print_design(X, manifest, core, unreadable, notes, a.element_count_tol)
         if a.inspect:
             return inspect(case_dirs, {m["case_id"]: None for m in manifest}, opts) or 0
         out_dir.mkdir(parents=True, exist_ok=True)
@@ -517,8 +554,8 @@ def main(argv=None):
 
     def record(row, log):
         cid = int(row["case_id"])
-        if row["status"] == "current" and cid in previous and previous[cid]["status"] in ("ok", "warning"):
-            row = previous[cid]     # keep the checks from when the CSVs were written
+        if not row["source_was_potential"] and row["status"] in ("ok", "warning") and cid in previous:
+            row["source_was_potential"] = previous[cid]["source_was_potential"]   # CSVs not rewritten
         rows[cid] = row
         print(f"Case {cid:04d}: {row['status']}" + (f": {row['message']}" if row["message"] else ""))
         if log and row["status"] in ("failed", "warning"):
@@ -541,7 +578,7 @@ def main(argv=None):
             writer.writerows(rows[c] for c in sorted(rows))
 
     selected = [rows[c] for c in wanted if c in rows]
-    tally = {s: sum(r["status"] == s for r in selected) for s in ("ok", "current", "warning", "missing", "failed")}
+    tally = {s: sum(r["status"] == s for r in selected) for s in ("ok", "warning", "missing", "failed")}
     scales = sorted({r["thickness_scale"] for r in selected if r["thickness_scale"]})
     size = sum(p.stat().st_size for p in out_dir.glob("case_*_1d.csv"))
     extra = sorted(set(case_dirs) - set(key))

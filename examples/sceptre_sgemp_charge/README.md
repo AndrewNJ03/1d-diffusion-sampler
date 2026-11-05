@@ -482,7 +482,9 @@ The source comes from the adjoint file because the adjoint flux was solved with 
 identity (status 0) is the check on real files. To read the source from another file, use
 `--response-name` and `--response-prefix`. A case's CSVs are written only after it
 passes the checks, and each layer's width is compared with `case_key.txt`, which catches a
-wrong case id. The script refuses an output directory inside the repository. Results for
+wrong case id. Void and dielectric element counts may differ by one (`--element-count-tol`),
+since rounding in the mesher can add an element; shield and core must match exactly. The
+script refuses an output directory inside the repository. Results for
 every case are in `collection_report.csv`, and the exit status is 0 only if all are clean.
 
 **Meshing.** Use `linear` meshing in every region, with the max sizes that
