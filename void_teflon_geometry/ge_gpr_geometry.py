@@ -337,7 +337,7 @@ def main(
                         active_dims=np.arange(p_act), n_restarts=n_restarts,
                         noise_f_init=noise_f_init, noise_d_init=noise_d_init, jitter=jitter,
                     )
-                    gp.fit(X_lc, alpha_ge_z[:m_lc, k], G_act_z_norm[:m_lc, k, :])
+                    gp.fit(X_lc, alpha_ge_z[:m_lc, k], G_act_z_norm[:m_lc, k, :], theta_init=ge_models[k].theta_)
                     ge_preds_z[:, k] = gp.predict(X_te_act)
 
                 Y_ge_lc = Psi @ ((ge_preds_z * alpha_sig + alpha_mu).T)

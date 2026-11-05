@@ -413,3 +413,157 @@ python3 verify_void_sensitivity.py
 
 Data paths are resolved relative to the files, as `../../../data/...`
 (the `data/` directory next to this repository).
+
+## 8. GE-GPR vs standard GP on void, dielectric and shield thickness
+
+This section compares GE-GPR with a standard GP on one data set from the coupled
+electron-photon deterministic transport solve. `t_v`, `t_d` and `t_s` vary
+independently with the core fixed, and one mirrored `shield_thickness` applies to both
+shield blocks.
+
+### 8.1 Workflow
+
+```bash
+# 1. Design the cases and per-case mesh settings (see --help for bounds, sizes, mesh, FD step).
+python3 make_geometry_cases.py --out-dir DATA_DIR
+
+# 2. On the server: run every case in DATA_DIR/case_key.txt and dump into DATA_DIR
+#      every case:  case_NNNN_forward_1d.csv and case_NNNN_adjoint_1d.csv (Q+)
+#      train, test: also case_NNNN_adjoint_flux_1d.csv
+#    Roles are in DATA_DIR/case_manifest.csv. Sections 5 and 6 cover the conversions.
+#    exodus_to_csv.py takes Q+ from the adjoint Exodus file, so fd cases need one too,
+#    unless the source can be written without an adjoint solve. Their adjoint flux is
+#    not used.
+
+# 3. Compute q and all three gradients (writes qoi_geometry_adjoint.csv).
+python3 void_sensitivity.py DATA_DIR --parameterization independent --out-dir RESULTS --weight-sum 1
+
+# 4. Check the gradients against the perturbed runs (exit status 1 on failure).
+python3 check_gradients_fd.py --table RESULTS/qoi_geometry_adjoint.csv \
+    --manifest DATA_DIR/case_manifest.csv --out-dir RESULTS
+
+# 5. Compare the models.
+python3 compare_ge_vs_gp.py --table RESULTS/qoi_geometry_adjoint.csv \
+    --manifest DATA_DIR/case_manifest.csv --gradient-check RESULTS/gradient_check.json \
+    --out-dir RESULTS/comparison --n-jobs 8
+```
+
+The default design is 350 training and test cases plus 120 perturbed cases: 940 solves
+with an adjoint run for every case, or 820 if the perturbed cases can skip the adjoint
+solve. Use the same `--weight-sum` you use for the rest of your data.
+
+**Meshing.** Use `linear` meshing in every region, with the max sizes that
+`make_geometry_cases.py` writes per case to `mesh_settings.csv`. This relies on `linear`
+giving `ceil(thickness / max size)` equal elements, which holds for all 8 regions checked
+in the local dumps. Compare the first few dumps with the `n_*` columns to confirm it.
+
+| Region | Rule | Default | Why |
+|---|---|---|---|
+| Void | fixed count | 5 elements | Flux is nearly flat; the width scales smoothly |
+| Dielectric | fixed count | 600 elements (about 5e-4) | At h = 1e-3 electron flux still jumps up to 36% between elements |
+| Shield | fixed size | 1e-3, `t_s` snapped to multiples | Holds the Q+ spike element's width constant |
+| Core | fixed size | 1e-3, 100 elements at thickness 0.1 | Thickness never changes; 1e-3 at the spike elements |
+
+The spike elements decide the conductor rule. Q+ is a one-element spike with a fixed
+integral in each conductor element bordering the gap, so that element's width sets which
+flux average enters q. In cases 0 and 1 of the local dumps the four spike elements carry
+terms from 38% to 199% of |q| each, and the flux changes by up to 40% across them. If a
+shield element stretched with `t_s`, q would gain a mesh term that the adjoint gradient
+does not contain. On the synthetic slab with spikes, stretching gives a `t_s` error of 1.4%
+at the coarsest mesh, and a fixed size with whole-element steps gives at most 7e-5.
+
+Log meshing is not used in the shield: its element count would change with thickness and
+cannot be set directly. Avoid fixed max sizes in void and dielectric too. Those make the
+count jump with thickness, and fixed sizes may contribute to the jagged `q_net` in the
+1000-case grid, whose successive differences along `shield_thickness` run from 0.0038e-8
+to 0.0247e-8. Element size explains only part of that jaggedness (about 16% to 26% of the
+residual), so the refinement test below is the real check.
+
+**Refinement test, before the full study.** These sizes are starting values from two local
+cases. Run one nominal case, forward and adjoint, with the sizes as above, all halved, and
+all doubled, and compare q and the three gradients. Refine if the first two differ by more
+than about 1%. Then keep one mesh for the whole study, since q depends on the spike
+element's width.
+
+### 8.2 The gradients
+
+Thickening a layer inserts material in it while everything outside translates rigidly,
+so only the inserted slab contributes. Per mirrored side:
+
+$$\frac{dq}{dt_{\mathrm{layer}}} = -\psi\cdot\mu\frac{d\psi^\dagger}{dx}
+\quad\text{(adjoint form)},\qquad
+\frac{dq}{dt_{\mathrm{layer}}} = Q^\dagger\cdot\psi + \psi^\dagger\cdot\mu\frac{d\psi}{dx}
+\quad\text{(forward form)},$$
+
+each evaluated inside the layer, plus $\langle\partial Q^\dagger/\partial t,\psi\rangle$
+when the source level depends on thickness. The fixed-radius derivative of section 5 is
+the difference $L_v - L_d$, which the driver prints against the interface formula.
+
+These forms are constant through a uniform layer, so a Q+ spike in a neighbouring
+conductor does not enter. The driver evaluates them on elements at the block's typical
+Q+ level, away from spikes and block faces. In cases 0 and 1 of the local dumps the
+conductor spike height is about 100 times the gap level, but its integral equals the
+gap level (0.4439), so the source-slope fit tracks that integral in conductors.
+
+`verify_geometry_sensitivity.py` compares these against central differences on a
+synthetic S_N slab:
+
+| Case | Worst error at the finest mesh |
+|---|---|
+| Uniform Q+, Q+ jump, source depending on thickness, single-element void | about 2e-8 |
+| Dielectric volume source (forward form; the adjoint form is wrong here) | about 3e-8 |
+| Q+ spikes, shield widths scaling with `t_s` | 8e-4 on `t_s`, 1.4% at the coarsest mesh; about 2e-8 on `t_v`, `t_d` |
+| Q+ spikes, fixed shield element size (the prescribed mesh) | 2e-7 on `t_s`, 7e-5 at the coarsest mesh; about 2e-8 on `t_v`, `t_d` |
+
+**Limits:**
+
+- The synthetic slab has one group and no photons. An electron-only adjoint treats
+  photons as a fixed electron source and misses changes in photon attenuation with
+  thickness, so its forward-form gradients need the perturbed-run check most.
+- A large `max_layer_spread` in the table means the value varied through a layer, which
+  flags a volume source or a non-uniform Q+.
+- `check_gradients_fd.py` on real data is the deciding test. None of this has been run on
+  real adjoint flux yet.
+
+### 8.3 What the comparison holds equal
+
+For every study, seed and M, both models use the same training and held-out cases,
+values `q`, kernel family, hyperparameter ranges, diagonal jitter (1e-6) and restart
+count, and every fit starts cold. Scaling comes from the training subset only.
+
+The jitter matters because it sets an error floor. With GE-GPR's 1e-6 against sklearn's
+default 1e-10, the synthetic test showed GE-GPR losing at large M purely for that reason.
+
+Results to read:
+
+- `comparison_summary.csv`: `median_improvement_same_M` is the paired per-seed gain.
+  `gp_eps_q_at_same_solves` is the GP at 2M cases, since a GE-GPR case costs 2 solves and
+  a GP case costs 1. Compare it with `ge_gpr_eps_q_median` for the cost-based answer.
+- `*_calibration.png`: the share of held-out cases inside ±2σ. A narrow band only means
+  something if this stays near 95%.
+- `run_info.json`: settings and the gradient-check verdict. `at_bound` in
+  `comparison_results.csv` lists hyperparameters at a bound for each fit.
+
+`python3 compare_ge_vs_gp.py --synthetic --out-dir DIR` runs the whole comparison on an
+analytic response, and `--synthetic-gradient-error wrong` shuffles the gradients to show
+that the comparison notices. `python3 verify_geometry_sensitivity.py --end-to-end` runs
+from CSV dumps through all of the steps above. Synthetic results test the tooling and
+say nothing about the real response.
+
+### 8.4 Reading the uncertainty bands
+
+`ge_gpr_scalar.py` and the comparison use `band_plots.py`, which has three panels: means
+with ±2σ bands, deviations from the GE-GPR mean, and σ on a log axis.
+
+GE-GPR bands are often too thin to see on the mean panel. In the 2-case
+finite-difference pilot the full ±2σ band is 0.17% of the y-range. With two cases, both
+finite-difference slopes equal the same secant, so the data look exactly linear and the
+band collapses; that is not evidence of accuracy.
+
+Both models now report both σ definitions, because sklearn's `return_std` includes the
+fitted noise and `GEGaussianProcess.predict` does not unless `include_noise=True`. Bands
+include the noise for both. No σ is inflated to make a band visible. Each run prints the
+band width as a share of the y-range and any hyperparameters at a bound, and
+`ge_gpr_scalar.py` saves σ to `ge_gpr_scalar_prediction.npz`. Noise at its lower bound is
+expected for a deterministic solve; other hyperparameters at a bound mean the data do not
+determine them, as with the GP's length scale in the 2-case pilot.

@@ -38,8 +38,10 @@ import numpy as np
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
+from scipy.linalg import cho_solve, solve_triangular
 from scipy.optimize import minimize
 from scipy.sparse.linalg import spsolve
+from threadpoolctl import threadpool_limits
 
 from sklearn.gaussian_process import GaussianProcessRegressor
 from sklearn.gaussian_process.kernels import RBF, ConstantKernel, WhiteKernel
@@ -116,7 +118,7 @@ class GEGaussianProcess:
         nd2  = np.exp(2.0 * theta[2 + p])
         return sf2, ells2, nf2, nd2
 
-    def _build_aug_K(self, X: np.ndarray, theta: np.ndarray) -> np.ndarray:
+    def _build_aug_K(self, X: np.ndarray, theta: np.ndarray, return_parts: bool = False):
         """
         Build the (M*(1+p_act)) × (M*(1+p_act)) augmented kernel matrix.
 
@@ -129,6 +131,10 @@ class GEGaussianProcess:
                               = k(xⁱ,xʲ) · (xⁱ_m − xʲ_m) / ℓ_m²
         K_dd[i*p+m, j*p+n]  = Cov(∂f/∂x_m(xⁱ), ∂f/∂x'_n(xʲ))
                               = k(xⁱ,xʲ) · [δ_{mn}/ℓ_m² − r_m r_n/(ℓ_m² ℓ_n²)]
+
+        With return_parts=True also returns the noise-free blocks
+        (Kff, Kfd_blk, Kdd_blk) and intermediates (R, A = R/ℓ²) reused by
+        the analytic likelihood gradient.
         """
         sf2, ells2, nf2, nd2 = self._parse_theta(theta)
         p = self.p_act
@@ -137,27 +143,30 @@ class GEGaussianProcess:
 
         # Pairwise differences: R[i,j,m] = x^i_m − x^j_m
         R = X_a[:, None, :] - X_a[None, :, :]  # (M, M, p_act)
-        D2 = np.sum(R ** 2 / ells2, axis=2)    # (M, M)
+        A = R / ells2                          # (M, M, p_act)  r_m/ℓ_m²
+        D2 = np.sum(R * A, axis=2)             # (M, M)
         Kff = sf2 * np.exp(-0.5 * D2)          # (M, M)
 
         # K_fd: (M, M*p_act)
-        Kfd = (Kff[:, :, None] * R) / ells2    # (M, M, p_act)
-        Kfd = Kfd.reshape(M, M * p)
+        Kfd_blk = Kff[:, :, None] * A          # (M, M, p_act)
 
         # K_dd: (M*p_act, M*p_act)
-        # δ_{mn}/ℓ_m² — outer product of R/ℓ²
-        delta = np.eye(p)[None, None, :, :] / ells2[None, None, :, None]  # (1,1,p,p)
-        RmRn  = (R[:, :, :, None] * R[:, :, None, :]) / (ells2[:, None] * ells2[None, :])
-        Kdd_blk = Kff[:, :, None, None] * (delta - RmRn)  # (M, M, p, p)
-        Kdd = Kdd_blk.transpose(0, 2, 1, 3).reshape(M * p, M * p)
+        # δ_{mn}/ℓ_m² − (r_m/ℓ_m²)(r_n/ℓ_n²)
+        delta = np.diag(1.0 / ells2)                                      # (p, p)
+        Kdd_blk = Kff[:, :, None, None] * (delta - A[:, :, :, None] * A[:, :, None, :])  # (M, M, p, p)
 
         n_aug = M * (1 + p)
         K = np.empty((n_aug, n_aug))
-        K[:M, :M] = Kff + nf2 * np.eye(M)
-        K[:M, M:] = Kfd
-        K[M:, :M] = Kfd.T
-        K[M:, M:] = Kdd + nd2 * np.eye(M * p)
-        K += self.jitter * np.eye(n_aug)
+        K[:M, :M] = Kff
+        K[:M, M:] = Kfd_blk.reshape(M, M * p)
+        K[M:, :M] = K[:M, M:].T
+        K[M:, M:] = Kdd_blk.transpose(0, 2, 1, 3).reshape(M * p, M * p)
+        diag = np.einsum('ii->i', K)           # writable view of the diagonal
+        diag[:M] += nf2
+        diag[M:] += nd2
+        diag += self.jitter
+        if return_parts:
+            return K, (Kff, Kfd_blk, Kdd_blk, R, A)
         return K
 
     # ------------------------------------------------------------------ #
@@ -171,7 +180,7 @@ class GEGaussianProcess:
         except np.linalg.LinAlgError:
             return 1e10
 
-        alpha = np.linalg.solve(L.T, np.linalg.solve(L, y_aug))
+        alpha = cho_solve((L, True), y_aug)
         lml = (
             -0.5 * float(y_aug @ alpha)
             - np.sum(np.log(np.diag(L)))
@@ -179,15 +188,81 @@ class GEGaussianProcess:
         )
         return -lml
 
+    def _neg_lml_and_grad(self, theta: np.ndarray, X: np.ndarray, y_aug: np.ndarray):
+        """
+        Negative log-marginal likelihood and its analytic gradient w.r.t. θ.
+
+            ∂(−lml)/∂θ_i = −½ tr(W ∂K/∂θ_i),   W = α αᵀ − K⁻¹
+
+        Each ∂K/∂θ_i is contracted block-by-block (ff, fd, dd) against W,
+        so no full (n_aug × n_aug) derivative matrix is ever formed.
+        Per block, with E = K_ff, a_n = r_n/ℓ_n², u_m = r_m²/ℓ_m²:
+
+            ∂/∂log ℓ_m  K_ff      = E u_m
+            ∂/∂log ℓ_m  K_fd[n]   = E a_n (u_m − 2δ_mn)
+            ∂/∂log ℓ_m  K_dd[n,q] = u_m K_dd[n,q]
+                                    − 2 δ_nq δ_nm E/ℓ_n²
+                                    + 2 (δ_nm + δ_qm) E a_n a_q
+        """
+        p = self.p_act
+        M = X.shape[0]
+        try:
+            K, (Kff, Kfd_blk, Kdd_blk, R, A) = self._build_aug_K(X, theta, return_parts=True)
+            L = np.linalg.cholesky(K)
+        except np.linalg.LinAlgError:
+            return 1e10, np.zeros_like(theta)
+
+        alpha = cho_solve((L, True), y_aug)
+        nlml = (
+            0.5 * float(y_aug @ alpha)
+            + np.sum(np.log(np.diag(L)))
+            + 0.5 * len(y_aug) * np.log(2.0 * np.pi)
+        )
+
+        _, ells2, nf2, nd2 = self._parse_theta(theta)
+        W = np.outer(alpha, alpha) - cho_solve((L, True), np.eye(len(y_aug)))
+        Wff = W[:M, :M]
+        Wfd = W[:M, M:].reshape(M, M, p)                                # (M, M, p)
+        Wdd = W[M:, M:].reshape(M, p, M, p).transpose(0, 2, 1, 3)       # (M, M, p, p)
+
+        U = R * A                                                       # u_m = r_m²/ℓ_m²
+        WE_ff  = Wff * Kff                                              # (M, M)
+        WS_fd  = Wfd * Kfd_blk                                          # (M, M, p)
+        WS_dd  = Wdd * Kdd_blk                                          # (M, M, p, p)
+        WE_dd  = Wdd * Kff[:, :, None, None]                            # (M, M, p, p)
+
+        # tr(W ∂K/∂θ): the fd block appears twice (K_fd and K_fd^T)
+        tr = np.empty_like(theta)
+        tr[0] = 2.0 * (WE_ff.sum() + 2.0 * WS_fd.sum() + WS_dd.sum())
+        B = WE_dd * A[:, :, :, None] * A[:, :, None, :]                 # E W a_n a_q
+        tr[1:1 + p] = (
+            np.einsum('ij,ijm->m', WE_ff, U)
+            + 2.0 * (np.einsum('ijn,ijm->m', WS_fd, U) - 2.0 * WS_fd.sum(axis=(0, 1)))
+            + np.einsum('ijnq,ijm->m', WS_dd, U)
+            - 2.0 * np.einsum('ijmm->m', WE_dd) / ells2
+            + 2.0 * (B.sum(axis=(0, 1, 3)) + B.sum(axis=(0, 1, 2)))
+        )
+        tr[1 + p] = 2.0 * nf2 * np.trace(Wff)
+        tr[2 + p] = 2.0 * nd2 * np.trace(W[M:, M:])
+        return nlml, -0.5 * tr
+
     # ------------------------------------------------------------------ #
     # Public API: fit / predict                                          #
     # ------------------------------------------------------------------ #
+
+    def theta_bounds(self) -> list:
+        """L-BFGS-B bounds on θ, in the order of _parse_theta."""
+        return (
+            [(-5.0, 5.0)] * (1 + self.p_act)   # sf, ells
+            + [(-10.0, 0.0), (-10.0, 0.0)]     # nf, nd  (keep noise ≤ 1)
+        )
 
     def fit(
         self,
         X: np.ndarray,
         y: np.ndarray,
         G_active: np.ndarray,
+        theta_init: np.ndarray = None,
     ) -> "GEGaussianProcess":
         """
         Fit the GE-GP.
@@ -198,6 +273,8 @@ class GEGaussianProcess:
         y : (M,)         standardised function values
         G_active : (M, p_act)  standardised gradients ∂z/∂x_m for active dims,
                                i.e. chain-rule–corrected to the z/x_norm space.
+        theta_init : optional (3+p_act,) starting θ for the first (non-random)
+                     restart, e.g. a previously fitted theta_ (warm start).
         """
         p = self.p_act
         y_aug = np.concatenate([y, G_active.ravel(order='C')])
@@ -208,14 +285,14 @@ class GEGaussianProcess:
         self.y_aug_   = y_aug
 
         theta_dim = 3 + p          # log_sf  +  log_ells (p)  +  log_nf  +  log_nd
-        bounds = (
-            [(-5.0, 5.0)] * (1 + p)   # sf, ells
-            + [(-10.0, 0.0), (-10.0, 0.0)]  # nf, nd  (keep noise ≤ 1)
-        )
+        bounds = self.theta_bounds()
 
         theta0 = np.zeros(theta_dim)
         theta0[1 + p] = np.log(self.noise_f_init)
         theta0[2 + p] = np.log(self.noise_d_init)
+        if theta_init is not None:
+            lo, hi = np.array(bounds).T
+            theta0 = np.clip(np.asarray(theta_init, dtype=float), lo, hi)
 
         best_theta, best_nlml = theta0.copy(), np.inf
         rng = np.random.default_rng(0)
@@ -229,13 +306,18 @@ class GEGaussianProcess:
                     rng.uniform(-8.0, -2.0, size=2),
                 ])
 
-            result = minimize(
-                self._neg_lml, theta_i,
-                args=(X, y_aug),
-                method='L-BFGS-B',
-                bounds=bounds,
-                options={'maxiter': 300, 'ftol': 1e-10, 'gtol': 1e-6},
-            )
+            # Single-threaded BLAS: at n_aug ~ 10²–10³ the OpenBLAS thread
+            # wake-up cost between many small calls dominates (~5x slower
+            # with 12 threads than with 1 on the dev machine).
+            with threadpool_limits(limits=1, user_api='blas'):
+                result = minimize(
+                    self._neg_lml_and_grad, theta_i,
+                    args=(X, y_aug),
+                    method='L-BFGS-B',
+                    jac=True,
+                    bounds=bounds,
+                    options={'maxiter': 300, 'ftol': 1e-10, 'gtol': 1e-6},
+                )
             if result.fun < best_nlml:
                 best_nlml = result.fun
                 best_theta = result.x.copy()
@@ -243,7 +325,7 @@ class GEGaussianProcess:
         self.theta_ = best_theta
         K = self._build_aug_K(X, best_theta)
         self.L_     = np.linalg.cholesky(K)
-        self.alpha_ = np.linalg.solve(self.L_.T, np.linalg.solve(self.L_, y_aug))
+        self.alpha_ = cho_solve((self.L_, True), y_aug)
         self.lml_   = -best_nlml
         return self
 
@@ -251,13 +333,17 @@ class GEGaussianProcess:
         self,
         X_test: np.ndarray,
         return_std: bool = False,
+        include_noise: bool = False,
     ):
         """
         Predict function values f(x*) at test points.
 
         Returns mean (and optionally std) in the *standardised* output space.
+        The std is for the latent f(x*) by default. include_noise=True adds the
+        fitted value noise σ_nf², which is what sklearn's return_std reports for
+        a kernel with a WhiteKernel term.
         """
-        sf2, ells2, _, _ = self._parse_theta(self.theta_)
+        sf2, ells2, nf2, _ = self._parse_theta(self.theta_)
         p = self.p_act
         M = self.X_train_.shape[0]
         M_te = X_test.shape[0]
@@ -279,8 +365,10 @@ class GEGaussianProcess:
         if not return_std:
             return mean
 
-        v = np.linalg.solve(self.L_, k_star.T)                # (n_aug, M_te)
+        v = solve_triangular(self.L_, k_star.T, lower=True)  # (n_aug, M_te)
         var = np.maximum(sf2 - np.sum(v ** 2, axis=0), 0.0)
+        if include_noise:
+            var = var + nf2
         return mean, np.sqrt(var)
 
 
@@ -682,7 +770,7 @@ def main(
                         noise_d_init=noise_d_init,
                         jitter=jitter,
                     )
-                    gp.fit(X_lc, y_lc[k], G_lc[k])
+                    gp.fit(X_lc, y_lc[k], G_lc[k], theta_init=ge_models[k].theta_)
                     ge_preds_z[:, k] = gp.predict(X_te_act)
 
                 Y_ge_lc = Psi @ ((ge_preds_z * alpha_sig + alpha_mu).T)

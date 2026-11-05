@@ -19,16 +19,13 @@ import sys
 from pathlib import Path
 
 import numpy as np
-import matplotlib
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
-
 from sklearn.gaussian_process import GaussianProcessRegressor
-from sklearn.gaussian_process.kernels import RBF, ConstantKernel, WhiteKernel
 from sklearn.preprocessing import StandardScaler
 
+from band_plots import (ge_hyperparameters, gp_hyperparameters, matched_gp_kernel, plot_band_panels,
+                        predict_ge, predict_gp, report_bands)
 from extract_qoi import OUT_DIR
-from gpr_scalar import load_qoi_table, _make_kernel
+from gpr_scalar import load_qoi_table
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "sklearn_implementation"))
 from ge_gpr import GEGaussianProcess  # noqa: E402
@@ -96,6 +93,10 @@ def main(n_restarts: int = 10, out_dir: Path = OUT_DIR, gradient_source: str = "
     elif gradient_source == "fd":
         case_ids, X, y = load_qoi_table(table_path)
         dy_dx_phys = finite_difference_gradient(X, y)
+        if len(y) == 2:
+            print("WARNING: with 2 cases, fd mode gives both cases the same secant slope. The data "
+                  "then look exactly linear, so the GE-GPR band collapses; this is not evidence "
+                  "of accuracy.")
         qlabel = r"$q_{\mathrm{net}}$"
     else:
         raise ValueError("gradient_source must be 'adjoint' or 'fd'")
@@ -131,9 +132,10 @@ def main(n_restarts: int = 10, out_dir: Path = OUT_DIR, gradient_source: str = "
 
     # Standard GPR on the same data, for comparison (mirrors ge_gpr.py's main()).
     std_gpr = GaussianProcessRegressor(
-        kernel=_make_kernel(p=1),
+        kernel=matched_gp_kernel(p=1),
         n_restarts_optimizer=n_restarts,
         normalize_y=False,
+        random_state=0,
     )
     std_gpr.fit(X_norm, y_z)
     print(f"Std GPR  log-MLL = {std_gpr.log_marginal_likelihood_value_:.3f}")
@@ -141,32 +143,28 @@ def main(n_restarts: int = 10, out_dir: Path = OUT_DIR, gradient_source: str = "
     grid = np.linspace(X.min(), X.max(), 200).reshape(-1, 1)
     grid_norm = x_scaler.transform(grid)
 
-    mu_ge_z, sd_ge_z = ge_gp.predict(grid_norm, return_std=True)
-    mu_ge, sd_ge = mu_ge_z * y_sd + y_mu, sd_ge_z * y_sd
+    ge = predict_ge(ge_gp, grid_norm, y_mu, y_sd)
+    gp = predict_gp(std_gpr, grid_norm, y_mu, y_sd)
+    ge_hyper, gp_hyper = ge_hyperparameters(ge_gp), gp_hyperparameters(std_gpr)
 
-    mu_std_z, sd_std_z = std_gpr.predict(grid_norm, return_std=True)
-    mu_std, sd_std = mu_std_z * y_sd + y_mu, sd_std_z * y_sd
+    print()
+    y_range = float(np.ptp(y)) or 1.0
+    report_bands("GE-GPR", ge, y_range, ge_hyper)
+    report_bands("Std GPR", gp, y_range, gp_hyper)
 
-    fig, ax = plt.subplots(figsize=(7, 5))
-    ax.plot(grid[:, 0], mu_ge, "-", color="steelblue", lw=2, label="GE-GPR mean")
-    ax.fill_between(grid[:, 0], mu_ge - 2 * sd_ge, mu_ge + 2 * sd_ge,
-                     color="steelblue", alpha=0.18, label=r"GE-GPR $\pm 2\sigma$")
-    ax.plot(grid[:, 0], mu_std, "--", color="tomato", lw=2, label="Std GPR mean")
-    ax.fill_between(grid[:, 0], mu_std - 2 * sd_std, mu_std + 2 * sd_std,
-                     color="tomato", alpha=0.12, label=r"Std GPR $\pm 2\sigma$")
-    ax.scatter(X[:, 0], y, color="black", zorder=5, label="training cases")
-    for cid, xi, yi in zip(case_ids, X[:, 0], y):
-        ax.annotate(f"C{cid}", (xi, yi), xytext=(4, 4),
-                     textcoords="offset points", fontsize=8, color="dimgray")
-    ax.set_xlabel("void_thickness")
-    ax.set_ylabel(qlabel)
-    ax.set_title(f"GE-GPR vs Std GPR — SGEMP charge, {gradient_source} gradients  (M={M})")
-    ax.legend(fontsize=9)
-    ax.grid(True, ls="--", alpha=0.4)
-    plt.tight_layout()
     out_path = out_dir / "ge_gpr_scalar_prediction.png"
-    plt.savefig(out_path, dpi=150)
+    plot_band_panels(grid[:, 0], ge, gp, X[:, 0], y, xlabel="void_thickness", ylabel=qlabel,
+                     title=f"GE-GPR vs Std GPR: SGEMP charge, {gradient_source} gradients  (M={M})",
+                     path=out_path, annotate=case_ids)
     print(f"\nSaved: {out_path}")
+
+    # The learned stds and hyperparameters, so a band can be inspected after the run.
+    npz_path = out_dir / "ge_gpr_scalar_prediction.npz"
+    np.savez(npz_path, grid=grid[:, 0], X_train=X[:, 0], y_train=y, case_ids=case_ids,
+             ge_mean=ge["mean"], ge_sd_latent=ge["sd_latent"], ge_sd_total=ge["sd_total"],
+             gp_mean=gp["mean"], gp_sd_latent=gp["sd_latent"], gp_sd_total=gp["sd_total"],
+             ge_theta=ge_gp.theta_, gp_theta=std_gpr.kernel_.theta)
+    print(f"Saved: {npz_path}")
 
     return dict(ge_gp=ge_gp, std_gpr=std_gpr, x_scaler=x_scaler,
                 y_mu=y_mu, y_sd=y_sd, X=X, y=y, case_ids=case_ids,

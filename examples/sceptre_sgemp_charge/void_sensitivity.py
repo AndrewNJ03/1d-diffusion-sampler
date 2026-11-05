@@ -62,8 +62,30 @@ Assumptions (check before trusting a number)
   - Every term is first order in the element width at x_i. Verify against
     finite differences in t_v before using the gradients
     (verify_void_sensitivity.py checks the method on a synthetic S_N slab).
+
+Independent thicknesses (parameterization="independent")
+--------------------------------------------------------
+With the core fixed and t_v, t_d, t_s free, thickening a layer inserts material
+in that layer while everything outside it translates rigidly (outer radius
+grows). The translated part of the operator, its sources and any Q+ spike are
+unchanged, so only the inserted slab contributes, per mirrored side:
+
+    adjoint form:  dq/dt_layer = -psi . mu dpsi+/dx       evaluated in the layer
+    forward form:  dq/dt_layer = Q+ . psi + psi+ . mu dpsi/dx
+
+Both are constant through a layer with uniform material and uniform Q+ (with no
+volume source, they are equal). A forward volume source makes the adjoint form
+wrong, as above, and a non-uniform source makes the value vary through the
+layer; averaging over the layer is then the derivative for a uniform stretch.
+The fixed-radius result is the difference of two layers, dq/dt_v|_R = L_v - L_d,
+which main() prints as a consistency check against the interface formula.
+
+Extra assumptions: the incident flux on the outer faces is fixed; the geometry
+stays mirror symmetric; photon attenuation changes are missed by an electron-only
+adjoint, as above. Check against perturbed runs with check_gradients_fd.py.
 """
 
+import csv
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -74,12 +96,22 @@ from extract_qoi import (
     COL_X_LEFT, COL_X_RIGHT, COL_ELEM_ID, COL_BLOCK_ID, COL_ENERGY_GROUP,
     COL_ANGLE_IDX, COL_LEFT_FLUX, COL_RIGHT_FLUX,
     BLOCK_DIELECTRIC_L, BLOCK_VOID_L, BLOCK_VOID_R, BLOCK_DIELECTRIC_R,
+    BLOCK_SHIELD_L, BLOCK_SHIELD_R, BLOCK_CORE,
     DATA_DIR, OUT_DIR, gauss_lobatto, load_case_key, ELECTRON_GROUP_MIN,
 )
 
 DIELECTRIC_BLOCKS = (BLOCK_DIELECTRIC_L, BLOCK_DIELECTRIC_R)
 VOID_BLOCKS = (BLOCK_VOID_L, BLOCK_VOID_R)
 GAP_BLOCKS = DIELECTRIC_BLOCKS + VOID_BLOCKS
+SHIELD_BLOCKS = (BLOCK_SHIELD_L, BLOCK_SHIELD_R)
+CONDUCTOR_BLOCKS = SHIELD_BLOCKS + (BLOCK_CORE,)
+# Thickness parameter -> (mirrored blocks, case_key.txt column).
+GEOMETRY_PARAMS = {
+    "void_thickness": (VOID_BLOCKS, "Void_Thickness"),
+    "dielectric_thickness": (DIELECTRIC_BLOCKS, "Dielectric_Thickness"),
+    "shield_thickness": (SHIELD_BLOCKS, "Shield_Thickness"),
+}
+GEOMETRY_TABLE = "qoi_geometry_adjoint.csv"
 
 FORWARD_PATTERN = "case_{:04d}_forward_1d.csv"
 ADJOINT_SOURCE_PATTERN = "case_{:04d}_adjoint_1d.csv"
@@ -273,6 +305,160 @@ def void_thickness_sensitivity(fwd: NodalField, adj: NodalField, src: NodalField
                                   operator_forward=operator_fwd, operator_adjoint=operator_adj))
 
     return dict(forward_form=total_fwd, adjoint_form=total_adj, interfaces=per_interface)
+
+
+# --------------------------------------------------------------------------- #
+# Layer sensitivity (independent thicknesses)                                 #
+# --------------------------------------------------------------------------- #
+
+def _layer_elements(src: NodalField, mu: np.ndarray, block: int) -> np.ndarray:
+    """
+    Elements of a block to evaluate the layer form on: those at the block's typical
+    Q+ level (dropping one-element spikes), and, when any remain, not touching a
+    spike or another block, where the dumps' face jumps enter the streaming term.
+    """
+    idx = np.where(src.block == block)[0]
+    if len(idx) == 0:
+        raise ValueError(f"block {block} has no elements")
+    level = np.abs(src.average()[idx] / mu[None, None, :]).mean(axis=(1, 2))
+    med = np.median(level)
+    tol = 1e-6 * max(med, 1e-12 * level.max(), 1e-300)
+    uniform = idx[np.abs(level - med) <= tol]
+    inner = [e for e in uniform
+             if {e - 1, e + 1} <= set(uniform.tolist())]
+    return np.array(inner, dtype=int) if inner else uniform
+
+
+def layer_sensitivity(fwd: NodalField, adj: NodalField, src: NodalField, mu: np.ndarray,
+                      w: np.ndarray, blocks) -> dict:
+    """
+    dq/dt per dump length for a layer on the given mirrored blocks, summed over the
+    blocks, in both forms of the module docstring. spread_* is the largest relative
+    variation inside one block, which should be small when the layer is uniform.
+    """
+    psi, psi_adj, q_src = fwd.average(), adj.average(), src.average()
+    total_adj, total_fwd, spread_adj, spread_fwd = 0.0, 0.0, 0.0, 0.0
+    for b in blocks:
+        elems = _layer_elements(src, mu, b)
+        v_adj = np.array([-_dot(element_streaming(adj, mu, e, -1) / fwd.h[e], psi[e], w)
+                          for e in elems])
+        v_fwd = np.array([_dot(q_src[e], psi[e], w)
+                          + _dot(psi_adj[e], element_streaming(fwd, mu, e, +1) / fwd.h[e], w)
+                          for e in elems])
+        h = fwd.h[elems]
+        m_adj, m_fwd = float(v_adj @ h / h.sum()), float(v_fwd @ h / h.sum())
+        total_adj += m_adj
+        total_fwd += m_fwd
+        spread_adj = max(spread_adj, float(np.ptp(v_adj)) / max(abs(m_adj), 1e-300))
+        spread_fwd = max(spread_fwd, float(np.ptp(v_fwd)) / max(abs(m_fwd), 1e-300))
+    return dict(adjoint_form=total_adj, forward_form=total_fwd,
+                spread_adjoint=spread_adj, spread_forward=spread_fwd)
+
+
+def geometry_sensitivity(fwd: NodalField, adj: NodalField, src: NodalField, mu: np.ndarray,
+                         w: np.ndarray) -> dict:
+    """layer_sensitivity() for each thickness in GEOMETRY_PARAMS, per dump length."""
+    return {name: layer_sensitivity(fwd, adj, src, mu, w, blocks)
+            for name, (blocks, _) in GEOMETRY_PARAMS.items()}
+
+
+def layer_lengths_per_key(field: NodalField, case_params: dict, cid: int = -1) -> dict:
+    """
+    Dump width / case_key thickness per layer, the factor from per-dump-length to
+    per-case_key-unit. Raises if a mirrored pair differs, since the formula moves
+    both sides together, or if the case_key column is missing.
+    """
+    out = {}
+    for name, (blocks, column) in GEOMETRY_PARAMS.items():
+        if column not in case_params:
+            raise ValueError(f"case_key.txt has no {column} column, needed for independent thicknesses")
+        widths = [float(field.h[field.block == b].sum()) for b in blocks]
+        if not np.isclose(widths[0], widths[1], rtol=1e-6):
+            raise ValueError(f"case {cid}: mirrored {name} widths differ in the dump "
+                             f"({widths[0]:.8g} vs {widths[1]:.8g})")
+        out[name] = 0.5 * sum(widths) / case_params[column]
+    return out
+
+
+def _source_weights(src: NodalField, mu: np.ndarray) -> dict:
+    """
+    As _source_levels, except that conductor blocks report level * h. Their Q+ is a
+    one-element spike whose height goes as 1/h but whose integral does not, so with
+    mesh widths that scale with thickness the height would fake a thickness slope.
+    """
+    out = _source_levels(src, mu)
+    level = np.abs(src.average() / mu[None, None, :]).mean(axis=(1, 2))
+    for b in out:
+        if b in CONDUCTOR_BLOCKS:
+            mask = (src.block == b) & (level > 0)
+            vals = np.abs(src.average()[mask] / mu[None, None, :])
+            if mask.any():
+                out[b] = float(np.mean([v[v > 0].mean() * h for v, h in zip(vals, src.h[mask])]))
+    return out
+
+
+def _source_log_slopes_multi(T: np.ndarray, levels: list) -> tuple:
+    """
+    d ln c_b / dt_j per block, case and thickness (T is (n_cases, 3)). 1/c_b is fitted
+    linearly in the thicknesses (series capacitor), falling back to a quadratic in
+    ln c_b. A block is skipped, with a reason, if the cases cannot separate the
+    thicknesses, e.g. a sweep at fixed outer radius, where t_v + t_d is constant.
+    Returns ({block: slopes (n_cases, 3)}, {block: description}).
+    """
+    slopes, how = {}, {}
+    if len(T) < 2:
+        return slopes, how
+    active = np.where(np.ptp(T, axis=0) > 0)[0]
+    for b in sorted(set().union(*levels)):
+        c = np.array([lv.get(b, 0.0) for lv in levels])
+        if c.max() == 0 or np.ptp(c) <= 1e-6 * c.max():
+            continue
+        if np.any(c <= 0):
+            how[b] = "Q+ vanishes in some cases; term skipped"
+            continue
+        A = np.column_stack([np.ones(len(T)), T[:, active]])
+        if np.linalg.matrix_rank(A) < A.shape[1]:
+            how[b] = ("the cases do not separate the thicknesses; term SKIPPED, so the gradients "
+                      "miss <dQ+/dt, psi>")
+            continue
+        coef, *_ = np.linalg.lstsq(A, 1.0 / c, rcond=None)
+        resid = float(np.max(np.abs(A @ coef - 1.0 / c) * c))
+        g = np.zeros_like(T, dtype=float)
+        if resid <= 1e-3:
+            g[:, active] = -np.outer(c, coef[1:])
+            slopes[b] = g
+            how[b] = f"1/c linear in the thicknesses (max rel. residual {resid:.1e})"
+            continue
+        a = len(active)
+        t = T[:, active]
+        pairs = [(i, j) for i in range(a) for j in range(i, a)]
+        Q = np.column_stack([A] + [t[:, i] * t[:, j] for i, j in pairs])
+        if Q.shape[0] <= Q.shape[1] or np.linalg.matrix_rank(Q) < Q.shape[1]:
+            how[b] = (f"1/c not linear (residual {resid:.1e}) and too few cases for a quadratic "
+                      "fit; term SKIPPED, so the gradients miss <dQ+/dt, psi>")
+            continue
+        coef, *_ = np.linalg.lstsq(Q, np.log(c), rcond=None)
+        d = np.tile(coef[1:1 + a], (len(T), 1))
+        for k, (i, j) in enumerate(pairs):
+            d[:, i] += coef[1 + a + k] * t[:, j]
+            d[:, j] += coef[1 + a + k] * t[:, i]
+        g[:, active] = d
+        slopes[b] = g
+        how[b] = (f"quadratic fit of ln c (1/c not linear, residual {resid:.1e}; "
+                  f"fit residual {np.max(np.abs(Q @ coef - np.log(c))):.1e})")
+    return slopes, how
+
+
+def write_geometry_table(path: Path, rows: list) -> None:
+    """Write the independent-thickness table read by check_gradients_fd.py and compare_ge_vs_gp.py."""
+    columns = ["case_id", *GEOMETRY_PARAMS, "q", "dq_dtv", "dq_dtd", "dq_dts", "form", "status",
+               "dump_per_key_length", "max_layer_spread"]
+    with open(path, "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(columns)
+        for r in rows:
+            writer.writerow([r[0]] + [f"{v:.10e}" for v in r[1:8]] + [r[8], r[9]]
+                            + [f"{v:.6e}" for v in r[10:]])
 
 
 # --------------------------------------------------------------------------- #
@@ -477,8 +663,13 @@ CONVENTIONS = [  # (dump angle order, adjoint relabelled relative to forward)
 
 def main(data_dir: Path = DATA_DIR, out_dir: Path = OUT_DIR, adjoint_angles_reversed=None,
          q_mesh: str = "auto", angle_order: str = "auto", q_source: str = "volume",
-         weight_sum: float = 2.0, source_term: str = "auto", reference_q=None):
+         weight_sum: float = 2.0, source_term: str = "auto", reference_q=None,
+         parameterization: str = "fixed_outer_radius"):
     """
+    parameterization: "fixed_outer_radius" (default) computes dq/dt_v with the
+        dielectric shrinking as the void grows and writes qoi_void_adjoint.txt.
+        "independent" computes dq/dt_v, dq/dt_d and dq/dt_s with each thickness
+        free and the core fixed, and writes qoi_geometry_adjoint.csv.
     weight_sum: normalisation of the angular quadrature weights. 2.0 (default)
         is sum w = 2 over mu in [-1, 1]; SCEPTRE's q_directdrive uses 1.0, i.e.
         half the default. q, the boundary term and dq/dt_v all scale with it.
@@ -513,6 +704,9 @@ def main(data_dir: Path = DATA_DIR, out_dir: Path = OUT_DIR, adjoint_angles_reve
     forward flux has a vacuum face. q does not depend on the convention;
     dq/dt_v does.
     """
+    if parameterization not in ("fixed_outer_radius", "independent"):
+        raise ValueError("parameterization must be 'fixed_outer_radius' or 'independent'")
+    independent = parameterization == "independent"
     if q_mesh not in ("auto", "dump", "case_key"):
         raise ValueError("q_mesh must be 'auto', 'dump' or 'case_key'")
     if source_term not in ("auto", "on", "off"):
@@ -529,7 +723,8 @@ def main(data_dir: Path = DATA_DIR, out_dir: Path = OUT_DIR, adjoint_angles_reve
     case_key = load_case_key(data_dir / "case_key.txt")
 
     print("=" * 72)
-    print("dq/dt_v from forward + adjoint dumps (fixed outer radius)")
+    print("dq/dt_v, dq/dt_d, dq/dt_s from forward + adjoint dumps (independent thicknesses)"
+          if independent else "dq/dt_v from forward + adjoint dumps (fixed outer radius)")
     print("=" * 72)
     print(f"angular weights sum to {w.sum():g}; q from the {q_source} form; "
           f"<dQ+/dt_v, psi> term {'on' if use_source_term else 'off'}")
@@ -566,14 +761,17 @@ def main(data_dir: Path = DATA_DIR, out_dir: Path = OUT_DIR, adjoint_angles_reve
         raise ValueError("angle relabelling needs a quadrature symmetric about mu = 0")
 
     # ---- Pass 1: score every convention on every case (scores only). ----
-    scores, level_t, level_list, level_ids = {}, [], [], []
+    scores, level_t, level_list, level_ids, level_T = {}, [], [], [], []
     for cid in sorted(case_key):
         loaded = load_case(cid)
         if loaded is None:
             continue
         level_ids.append(cid)
         level_t.append(case_key[cid]["Void_Thickness"])
-        level_list.append(_source_levels(loaded[1], mu))
+        level_list.append(_source_weights(loaded[1], mu) if independent
+                          else _source_levels(loaded[1], mu))
+        if independent:
+            level_T.append([case_key[cid][col] for _, col in GEOMETRY_PARAMS.values()])
         if loaded[2] is None:
             continue
         fwd_raw, src_raw, adj_raw, _ = loaded
@@ -621,9 +819,16 @@ def main(data_dir: Path = DATA_DIR, out_dir: Path = OUT_DIR, adjoint_angles_reve
                   "check the adjoint dump's boundary conditions and angle order.")
 
     # ---- Q+ dependence on t_v (adds <dQ+/dt_v, psi> to dq/dt_v). ----
-    slopes, slope_how = _source_log_slopes(np.array(level_t, dtype=float), level_list)
+    if independent:
+        slopes_multi, slope_how = _source_log_slopes_multi(
+            np.array(level_T, dtype=float).reshape(-1, len(GEOMETRY_PARAMS)), level_list)
+        slopes = {}
+    else:
+        slopes_multi = {}
+        slopes, slope_how = _source_log_slopes(np.array(level_t, dtype=float), level_list)
     if slope_how:
-        print("\nQ+ dumps change with t_v in block(s):")
+        print("\nQ+ dumps change with the thicknesses in block(s):" if independent
+              else "\nQ+ dumps change with t_v in block(s):")
         for b, h in slope_how.items():
             print(f"  block {b}: {h}")
         if use_source_term:
@@ -633,12 +838,13 @@ def main(data_dir: Path = DATA_DIR, out_dir: Path = OUT_DIR, adjoint_angles_reve
                   "source. If the source the adjoint was solved with depends on t_v, dq/dt_v "
                   "misses that term; the cross-case check shows it.")
     if not use_source_term:
-        slopes = {}
+        slopes, slopes_multi = {}, {}
     slope_at = {cid: {b: float(v[level_ids.index(cid)]) for b, v in slopes.items()}
                 for cid in level_ids}
 
     # ---- Pass 2: q and dq/dt_v under that convention. ----
     rows, src_levels, scales, meshes, identity_failures = [], [], [], [], []
+    geometry_rows = []
     for cid in sorted(case_key):
         t_v = case_key[cid]["Void_Thickness"]
         loaded = load_case(cid)
@@ -662,6 +868,7 @@ def main(data_dir: Path = DATA_DIR, out_dir: Path = OUT_DIR, adjoint_angles_reve
         q_b = dq_f = dq_a = dq_use = np.nan
         status = STATUS_UNCHECKED
         use_form = "adjoint"
+        dq_geom, layer_spread = {name: np.nan for name in GEOMETRY_PARAMS}, np.nan
         if adj_raw is None:
             print(f"  [no adjoint solution: {a_path.name}]")
         else:
@@ -739,9 +946,30 @@ def main(data_dir: Path = DATA_DIR, out_dir: Path = OUT_DIR, adjoint_angles_reve
             for k, it in enumerate(sens["interfaces"]):
                 print(f"    interface {k} at x={it['x']:.5f}: source {it['source']:+.3e}, "
                       f"operator fwd {it['operator_forward']:+.3e}, adj {it['operator_adjoint']:+.3e}")
+            if independent:
+                widths = layer_lengths_per_key(fwd, case_key[cid], cid)
+                geom = geometry_sensitivity(fwd, adj, src, mu, w)
+                layer_spread = max(g[f"spread_{use_form}"] for g in geom.values())
+                print(f"  Independent thicknesses ({use_form} form):")
+                for j, name in enumerate(GEOMETRY_PARAMS):
+                    term = sum(float(v[level_ids.index(cid), j])
+                               * volume_inner_product(src_raw, fwd_raw, w, elem_mask=src_raw.block == b)
+                               for b, v in slopes_multi.items()) * len_factor
+                    dq_geom[name] = widths[name] * geom[name][f"{use_form}_form"] + term
+                    print(f"    dq/d{name:21s} = {dq_geom[name]:+.6e}   (<dQ+/dt, psi> {term:+.3e}, "
+                          f"spread in layer {geom[name][f'spread_{use_form}']:.1e})")
+                diff = s * (geom["void_thickness"][f"{use_form}_form"]
+                            - geom["dielectric_thickness"][f"{use_form}_form"])
+                interface = s * sens[f"{use_form}_form"]
+                print(f"    layer difference L_v - L_d = {diff:+.6e}; interface formula at fixed "
+                      f"radius = {interface:+.6e}")
         print(f"  q used                      = {q:.6e}   status: "
               f"{['identity OK', 'unchecked', 'identity FAILED'][status]}")
         rows.append((cid, t_v, q, q_b, dq_f, dq_a, s, status, dq_use))
+        if independent:
+            geometry_rows.append(
+                (cid, *[case_key[cid][col] for _, col in GEOMETRY_PARAMS.values()], q,
+                 *dq_geom.values(), use_form, status, s, layer_spread))
 
     if len(src_levels) > 1:
         changed = []
@@ -761,7 +989,8 @@ def main(data_dir: Path = DATA_DIR, out_dir: Path = OUT_DIR, adjoint_angles_reve
     if len(set(meshes)) > 1:
         print("\nWARNING: the boundary identity picked different q meshes for different cases "
               f"({meshes}); q values are on mixed units. Force q_mesh='dump' or 'case_key'.")
-    cross_case_check(rows)
+    if not independent:
+        cross_case_check(rows)   # across a 1-D sweep only; see check_gradients_fd.py otherwise
     if reference_q is not None:
         compare_reference_q(rows, reference_q)
     if identity_failures and q_source == "volume" and len(identity_failures) == len(scores):
@@ -774,6 +1003,13 @@ def main(data_dir: Path = DATA_DIR, out_dir: Path = OUT_DIR, adjoint_angles_reve
         print(f"\nAngle convention used for every case: {c_label(conv_use)}")
 
     table = np.array(rows, dtype=float)
+    if independent:
+        out_path = out_dir / GEOMETRY_TABLE
+        write_geometry_table(out_path, geometry_rows)
+        counts = np.bincount(table[:, 7].astype(int), minlength=3) if len(rows) else [0, 0, 0]
+        print(f"\nWrote {out_path}  ({len(rows)} case(s): {counts[0]} OK, {counts[1]} unchecked, "
+              f"{counts[2]} failed)")
+        return table
     out_path = out_dir / "qoi_void_adjoint.txt"
     np.savetxt(out_path, table,
                header="case_id void_thickness q q_boundary dq_dtv_forward_form "
@@ -801,6 +1037,12 @@ if __name__ == "__main__":
                     help="add <dQ+/dt_v, psi> from the Q+ dumps (auto: only with --q-source volume)")
     ap.add_argument("--reference-q", metavar="FILE",
                     help="two-column file 'case_id q' to compare q with (e.g. SCEPTRE q_directdrive)")
+    ap.add_argument("--parameterization", default="fixed_outer_radius",
+                    choices=["fixed_outer_radius", "independent"],
+                    help="independent: dq/dt_v, dq/dt_d, dq/dt_s with the core fixed and each "
+                         "thickness free; writes qoi_geometry_adjoint.csv")
+    ap.add_argument("--out-dir", default=str(OUT_DIR))
     a = ap.parse_args()
-    main(data_dir=a.data_dir, q_mesh=a.q_mesh, angle_order=a.angle_order, q_source=a.q_source,
-         weight_sum=a.weight_sum, source_term=a.source_term, reference_q=a.reference_q)
+    main(data_dir=a.data_dir, out_dir=a.out_dir, q_mesh=a.q_mesh, angle_order=a.angle_order,
+         q_source=a.q_source, weight_sum=a.weight_sum, source_term=a.source_term,
+         reference_q=a.reference_q, parameterization=a.parameterization)
