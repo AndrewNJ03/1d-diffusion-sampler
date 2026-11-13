@@ -48,6 +48,7 @@ import matplotlib.pyplot as plt
 from joblib import Parallel, delayed
 from sklearn.exceptions import ConvergenceWarning
 from sklearn.gaussian_process import GaussianProcessRegressor
+from threadpoolctl import threadpool_limits
 from sklearn.preprocessing import StandardScaler
 
 from band_plots import (GE_COLOR, GE_STYLE, GP_COLOR, GP_STYLE, ge_hyperparameters,
@@ -104,7 +105,8 @@ def fit_pair(X, y, G, seed: int, n_restarts: int, ge_noise: str = "shared"):
                                   normalize_y=False, alpha=JITTER, random_state=seed)
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", ConvergenceWarning)   # at-bound flags report this per fit
-        gp.fit(X_n, z)
+        with threadpool_limits(limits=1, user_api="blas"):       # as GEGaussianProcess.fit does
+            gp.fit(X_n, z)
     t2 = time.perf_counter()
     return dict(ge=ge, gp=gp, x_scaler=x_scaler, y_mu=y_mu, y_sd=y_sd,
                 times={GE: t1 - t0, GP: t2 - t1})

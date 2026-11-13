@@ -31,6 +31,7 @@ from pathlib import Path
 import numpy as np
 from sklearn.exceptions import ConvergenceWarning
 from sklearn.gaussian_process import GaussianProcessRegressor
+from threadpoolctl import threadpool_limits
 
 from band_plots import matched_gp_kernel
 
@@ -67,7 +68,8 @@ def value_gp(X: np.ndarray, y: np.ndarray, restarts: int = 3, seed: int = 0) -> 
                                   alpha=JITTER, random_state=seed)
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", ConvergenceWarning)
-        gp.fit(U, z)
+        with threadpool_limits(limits=1, user_api="blas"):       # as GEGaussianProcess.fit does
+            gp.fit(U, z)
     ell = np.atleast_1d(gp.kernel_.k1.k2.length_scale)
     sf2 = gp.kernel_.k1.k1.constant_value
     R = U[:, None, :] - U[None, :, :]

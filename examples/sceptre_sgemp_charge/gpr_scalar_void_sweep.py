@@ -28,6 +28,7 @@ import matplotlib.pyplot as plt
 from sklearn.gaussian_process import GaussianProcessRegressor
 from sklearn.gaussian_process.kernels import RBF, ConstantKernel, WhiteKernel
 from sklearn.preprocessing import StandardScaler
+from threadpoolctl import threadpool_limits
 
 DATA_PATH = (Path(__file__).resolve().parents[3] / "data"
              / "constantR_void_1000_monoenergy" / "summary(1).csv")
@@ -94,7 +95,9 @@ def main(n_restarts: int = 5, test_frac: float = 0.2, seed: int = 1, out_dir: Pa
             n_restarts_optimizer=n_restarts,
             normalize_y=False,
         )
-        gpr.fit(X_tr_n, y_tr_z)
+        # Single-threaded BLAS, as in GEGaussianProcess.fit: 12 threads made this fit 4-7x slower.
+        with threadpool_limits(limits=1, user_api="blas"):
+            gpr.fit(X_tr_n, y_tr_z)
 
         X_te_n = x_scaler.transform(X_test)
         y_pred_z = gpr.predict(X_te_n)
